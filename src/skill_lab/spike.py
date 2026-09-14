@@ -30,8 +30,17 @@ DOCKERFILE = """\
 FROM ubuntu:24.04
 
 RUN apt-get update \\
-    && apt-get install -y --no-install-recommends git python3 python3-pytest ca-certificates \\
+    && apt-get install -y --no-install-recommends \\
+        git python3 python3-pytest ca-certificates curl bash procps \\
     && rm -rf /var/lib/apt/lists/*
+
+# Pre-install Claude Code so Harbor's per-trial agent setup is skipped: its
+# install step is a no-op when `claude` is already on PATH. This layer sits
+# before the repo copy so Docker caches it across fixtures.
+ARG CLAUDE_CODE_VERSION={claude_code_version}
+RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh | bash -s -- $CLAUDE_CODE_VERSION \\
+    && ln -s /root/.local/bin/claude /usr/local/bin/claude \\
+    && claude --version
 
 WORKDIR /app
 COPY repo/ /app/
@@ -69,14 +78,16 @@ exclude = {excludes}
 # --------------------------------------------------------------------------- #
 
 
-def build_task(task_dir: Path, repo: Path, prompt: str, agent_timeout: float) -> None:
+def build_task(
+    task_dir: Path, repo: Path, prompt: str, agent_timeout: float, claude_code_version: str = "latest"
+) -> None:
     if task_dir.exists():
         shutil.rmtree(task_dir)
     env_dir = task_dir / "environment"
     env_dir.mkdir(parents=True)
 
     shutil.copytree(repo, env_dir / "repo", ignore=REPO_IGNORE)
-    (env_dir / "Dockerfile").write_text(DOCKERFILE)
+    (env_dir / "Dockerfile").write_text(DOCKERFILE.format(claude_code_version=claude_code_version))
     (task_dir / "instruction.md").write_text(prompt.rstrip() + "\n")
     (task_dir / "task.toml").write_text(
         TASK_TOML.format(agent_timeout=agent_timeout, excludes=json.dumps(WORKSPACE_EXCLUDES))
@@ -92,6 +103,27 @@ def build_task(task_dir: Path, repo: Path, prompt: str, agent_timeout: float) ->
 # --------------------------------------------------------------------------- #
 
 
+def auth_env(auth: str) -> dict[str, str]:
+    """Environment for the harbor subprocess.
+
+    "subscription": Harbor's Claude Code adapter drops ANTHROPIC_API_KEY when
+    CLAUDE_FORCE_OAUTH is truthy and forwards CLAUDE_CODE_OAUTH_TOKEN (from
+    `claude setup-token`) into the container, so the CLI bills the user's
+    Claude subscription instead of API usage.
+    """
+    env = dict(os.environ)
+    if auth == "subscription":
+        if not env.get("CLAUDE_CODE_OAUTH_TOKEN"):
+            sys.exit(
+                "subscription auth requested but CLAUDE_CODE_OAUTH_TOKEN is not set.\n"
+                "Run `claude setup-token` and export the token, or pass --auth api."
+            )
+        env["CLAUDE_FORCE_OAUTH"] = "1"
+    else:
+        env.pop("CLAUDE_FORCE_OAUTH", None)
+    return env
+
+
 def run_harbor(
     task_dir: Path,
     skill: Path,
@@ -101,6 +133,7 @@ def run_harbor(
     model: str | None,
     attempts: int,
     concurrency: int,
+    auth: str = "subscription",
 ) -> Path:
     cmd = [
         "harbor", "run",
@@ -115,8 +148,8 @@ def run_harbor(
     ]
     if model:
         cmd += ["--model", model]
-    print("$", " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True)
+    print("$", " ".join(cmd), f"  [auth: {auth}]", flush=True)
+    subprocess.run(cmd, check=True, env=auth_env(auth))
     return jobs_dir / job_name
 
 
@@ -310,7 +343,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--agent", default="claude-code")
     ap.add_argument("--model", default="anthropic/claude-sonnet-5")
     ap.add_argument("--concurrency", type=int, default=3)
+    ap.add_argument("--auth", choices=["subscription", "api"], default="subscription",
+                    help="Bill rollouts to the Claude subscription (needs CLAUDE_CODE_OAUTH_TOKEN) or the API key")
     ap.add_argument("--agent-timeout", type=float, default=900.0, help="Per-trial agent timeout in seconds")
+    ap.add_argument("--claude-code-version", default="latest",
+                    help="Claude Code version to bake into the image (default: latest at build time)")
     ap.add_argument("--name", help="Experiment/job name (default: timestamp)")
     ap.add_argument("--output", type=Path, default=Path(".skill-lab/spike"))
     ap.add_argument("--parse-only", type=Path, metavar="JOB_DIR", help="Skip execution; parse an existing Harbor job dir")
@@ -326,10 +363,10 @@ def main(argv: list[str] | None = None) -> int:
         name = args.name or datetime.now().strftime("spike-%Y%m%d-%H%M%S")
         exp_dir = args.output / name
         task_dir = exp_dir / "task"
-        build_task(task_dir, args.repo, prompt, args.agent_timeout)
+        build_task(task_dir, args.repo, prompt, args.agent_timeout, args.claude_code_version)
         job_dir = run_harbor(
             task_dir, args.skill, exp_dir / "harbor", name,
-            args.agent, args.model, args.attempts, args.concurrency,
+            args.agent, args.model, args.attempts, args.concurrency, args.auth,
         )
 
     records = parse_job(job_dir)

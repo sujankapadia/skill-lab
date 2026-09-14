@@ -35,3 +35,14 @@ python3 src/skill_lab/spike.py --parse-only .skill-lab/spike/spike-3/harbor/spik
 Output per trial: completion status, error, duration, tokens/cost, tool-call
 sequence, final response, trajectory path, workspace path, files
 created/modified/deleted, and git diff stats.
+
+## Billing
+
+Rollouts and analysis calls run on your Claude subscription by default:
+
+```bash
+claude setup-token                                # one-time, prints a token
+export CLAUDE_CODE_OAUTH_TOKEN=...                # put it in ~/.zshrc
+```
+
+Pass `--auth api` to bill `ANTHROPIC_API_KEY` instead.

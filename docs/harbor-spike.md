@@ -181,6 +181,52 @@ a git repo, its commit — Harbor does not know about the fixture's origin.
 
 `harbor==0.23.0`. Task `schema_version = "1.4"`, trajectories `ATIF-v1.7`.
 
+## Subscription auth (verified)
+
+Both places Claude is billed can run on the user's Claude subscription instead
+of API usage:
+
+- **Rollouts.** Harbor's Claude Code adapter (`claude_code.py::_resolve_auth_env`)
+  drops `ANTHROPIC_API_KEY` and forwards `CLAUDE_CODE_OAUTH_TOKEN` when
+  `CLAUDE_FORCE_OAUTH` is truthy. `spike.py --auth subscription` (the default)
+  sets that for the `harbor run` subprocess. Verified by running a trial with
+  `ANTHROPIC_API_KEY` removed from the host environment entirely: it completed,
+  so OAuth was the only possible path. The token comes from `claude setup-token`
+  and lives in `~/.zshrc`.
+- **Analysis calls.** `ClaudeCliModel` (`src/skill_lab/analysis/model.py`) shells
+  out to `claude -p --output-format json --json-schema …` with the API key
+  removed from its env. `--setting-sources "" --strict-mcp-config --tools ""
+  --system-prompt …` keeps per-call context at ~1k tokens (47k without them,
+  because the user's global CLAUDE.md, skills and MCP servers get loaded).
+  Structured output is under `structured_output` in the JSON envelope.
+
+Harbor's trial logs don't record which auth path was used — the env is passed
+to the container exec, not the logged command — so the "no API key on host"
+test is the way to re-verify this after upgrades.
+
+## Startup time: bake Claude Code into the image (verified)
+
+Harbor's per-trial agent setup runs `apt-get install curl bash nodejs npm procps`
+and the Claude Code bootstrap installer inside every fresh container (~1–2 min
+each, 20× for a 20-run experiment). `install()` is skipped entirely when
+`command -v claude` succeeds (`_INSTALL_CHECK_COMMAND`), so the generated
+Dockerfile now installs Claude Code via `bootstrap.sh` and symlinks it to
+`/usr/local/bin/claude`, in a layer *before* `COPY repo/` so Docker caches it
+across fixtures. `--claude-code-version` pins it (default `latest`; the
+installed version is recorded in `result.json → agent_info.version`).
+
+Measured, single trial on the cached image:
+
+| phase             | before | after |
+|-------------------|--------|-------|
+| environment setup | ~5s    | 3s    |
+| agent setup       | ~100s  | 0s    |
+| agent execution   | ~30s   | 24s   |
+| **total runtime** | 2m33s  | 40s   |
+
+Harbor names images by a content hash of the environment dir (`hb__<sha>`), so
+the build is paid once per distinct fixture+Dockerfile and reused across jobs.
+
 ## Trial directory layout (observed)
 
 ```

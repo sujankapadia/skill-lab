@@ -1,0 +1,4 @@
+.skill-lab/
+.venv/
+__pycache__/
+*.egg-info/

@@ -23,3 +23,8 @@ Rules:
   that prepared it, marked "… [N more chars]". That truncation is not something
   the agent did; the agent saw the full output. Do not list it as a problem or
   uncertainty. Reason about what the agent read, not about what you can see.
+- Judge behaviors against the task actually given. Something the agent did
+  not do is only a possible problem if the task or the skill called for it,
+  or if skipping it plausibly harmed the result. For example, not running a
+  test suite is not a problem in a documentation-only task unless the agent
+  made a claim that only running the tests could support.

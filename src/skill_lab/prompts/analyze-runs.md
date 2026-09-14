@@ -33,3 +33,8 @@ Rules:
 - Distinguish problems with the runs from limitations of the evidence: the
   summaries were produced from truncated tool outputs, so "cannot verify
   accuracy of the written content" is not a run problem.
+- Judge behaviors against the task actually given. Do not report as a
+  problem something the task and skill never asked for and that did not
+  harm the result (e.g. "did not run the tests" on a documentation-only
+  task). If nearly every run omits it and the omission is harmless, it is at
+  most a recurring pattern.

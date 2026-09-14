@@ -46,6 +46,12 @@ uv run skill-lab summarize arch-v1 --concurrency 3
 # Cross-run analysis (summarizes any runs that lack a summary first).
 uv run skill-lab analyze arch-v1
 
+# Faster, shallower summaries (~3 min vs ~8 min per 20 runs). Haiku gets the
+# facts right but is weaker at noticing what the agent *didn't* do: in a test it
+# missed 1 of 2 runs that skipped an instructed file, so keep sonnet for the
+# analysis you act on.
+uv run skill-lab summarize arch-v1 --model haiku
+
 # Edit the skill, run it again under a new name, then compare observed behavior.
 uv run skill-lab run --skill ./examples/architecture-docs/skills/v2/architecture-documentation \
   --repo ./examples/architecture-docs/repo --prompt-file ./examples/architecture-docs/prompt.md \

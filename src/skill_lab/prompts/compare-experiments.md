@@ -26,3 +26,6 @@ Rules:
   difference of one or two runs is not evidence of anything.
 - Do not treat "cannot verify accuracy of written content" as a problem in
   either experiment; that is a limitation of the evidence.
+- Judge behaviors against the task actually given: an omission both
+  experiments share that the task never called for (e.g. not running tests
+  during a documentation task) is not a remaining issue.

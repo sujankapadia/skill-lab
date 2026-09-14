@@ -56,7 +56,25 @@ uv run skill-lab compare arch-v1 arch-v2      # -> .skill-lab/comparisons/arch-v
 `examples/architecture-docs/` holds the worked example: a fixture repo with
 architecture notes split across a stale `docs/architecture.md`, an outdated
 README section and accurate ADRs; `skills/v1` (the deliberately thin original)
-and `skills/v2` (revised from the v1 analysis).
+and `skills/v2` (revised from the v1 analysis); and `results/` with the actual
+v1 report, v2 report and v1→v2 comparison from 20-run experiments. Headline:
+v1 split 10/20 on whether to reconcile the README's stale architecture section;
+v2, which tells the agent to, went 20/20 — and surfaced a new 3/20 miss on
+reading CONTRIBUTING.md.
+
+## MVP definition of done (§22 of the plan)
+
+| # | Criterion | Status |
+|---|---|---|
+| 1–4 | Real SKILL.md, realistic repo and prompt, 20 Claude Code runs via Harbor | done (`inv-v1`) |
+| 5 | Each run starts from the same repo state | baseline commit baked into the image; verified |
+| 6 | Trajectory + final workspace collected | ATIF + `/app` artifact per trial |
+| 7 | Each run summarized automatically | `summarize` |
+| 8 | Multiple behavioral patterns identified | 2 strategies (10/10) in v1 |
+| 9 | A recurring problem surfaced | README left contradictory in 10/20 |
+| 10 | A strong run identified with reasons | yes (e.g. #4, #7: flagged the inconsistency instead of guessing) |
+| 11 | A SKILL.md improvement tied to evidence | yes; became v2 |
+| 12–14 | Edit, rerun 20×, compare | `inv-v2` + `compare`: 10/20 → 20/20 |
 
 Experiments live under `.skill-lab/experiments/<name>/`:
 

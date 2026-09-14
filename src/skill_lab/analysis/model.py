@@ -17,6 +17,32 @@ class AnalysisModel(Protocol):
     def generate_json(self, system_prompt: str, prompt: str, schema: dict) -> dict: ...
 
 
+class PlaceholderOutput(RuntimeError):
+    """The model filled the schema with dummy values instead of content."""
+
+
+_PLACEHOLDERS = {"test", "string", "a", "b", "c", "x", "y", "z", "foo", "bar", "todo", "n/a", "...", ""}
+
+
+def looks_like_placeholder(value: dict, min_chars: int = 12) -> bool:
+    """True if a structured-output object is dummy filler rather than content.
+
+    Seen in the wild: ``{"approach": "test", "steps": ["a", "b", "c"]}``. Only
+    top-level string fields and top-level lists of strings are checked — nested
+    objects legitimately hold short strings (run ids, enum values, names).
+    """
+    strings: list[str] = []
+    for v in value.values():
+        if isinstance(v, str):
+            strings.append(v.strip())
+        elif isinstance(v, list) and v and all(isinstance(x, str) for x in v):
+            strings.extend(x.strip() for x in v)
+    if not strings:
+        return False
+    bad = sum(1 for x in strings if x.lower() in _PLACEHOLDERS or len(x) < min_chars)
+    return bad * 2 > len(strings)
+
+
 class ClaudeCliModel:
     """Backend that shells out to ``claude -p`` so calls bill the user's Claude
     subscription rather than API usage.
@@ -38,7 +64,10 @@ class ClaudeCliModel:
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                return self._call(system_prompt, prompt, schema)
+                result = self._call(system_prompt, prompt, schema)
+                if looks_like_placeholder(result):
+                    raise PlaceholderOutput(f"placeholder output: {json.dumps(result)[:200]}")
+                return result
             except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
                 last = exc
                 if attempt < self.retries:

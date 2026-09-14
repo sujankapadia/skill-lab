@@ -10,7 +10,7 @@ collect what the agent did, and analyze variation across runs. See
 - **Phase 1 — normalize runs: done.** `skill-lab run` / `inspect` / `normalize`.
 - **Phase 2 — per-run summaries: done.** `skill-lab summarize`.
 - **Phase 3 — cross-run analysis: done.** `skill-lab analyze` → `analysis.json` + `report.md`; `run` does it automatically.
-- Phase 4 (compare two experiments): next.
+- **Phase 4 — compare skill versions: done.** `skill-lab compare v1 v2`.
 
 ## Prerequisites
 
@@ -26,7 +26,7 @@ uv sync
 # Run an experiment: N Claude Code trials of one skill against one repo + prompt,
 # then summarize each run and analyze them together (pass --no-analyze to stop early).
 uv run skill-lab run \
-  --skill ./examples/architecture-docs/architecture-documentation \
+  --skill ./examples/architecture-docs/skills/v1/architecture-documentation \
   --repo  ./examples/architecture-docs/repo \
   --prompt-file ./examples/architecture-docs/prompt.md \
   --attempts 20 --concurrency 4 --name arch-v1
@@ -45,7 +45,18 @@ uv run skill-lab summarize arch-v1 --concurrency 3
 
 # Cross-run analysis (summarizes any runs that lack a summary first).
 uv run skill-lab analyze arch-v1
+
+# Edit the skill, run it again under a new name, then compare observed behavior.
+uv run skill-lab run --skill ./examples/architecture-docs/skills/v2/architecture-documentation \
+  --repo ./examples/architecture-docs/repo --prompt-file ./examples/architecture-docs/prompt.md \
+  --attempts 20 --name arch-v2
+uv run skill-lab compare arch-v1 arch-v2      # -> .skill-lab/comparisons/arch-v1--arch-v2/report.md
 ```
+
+`examples/architecture-docs/` holds the worked example: a fixture repo with
+architecture notes split across a stale `docs/architecture.md`, an outdated
+README section and accurate ADRs; `skills/v1` (the deliberately thin original)
+and `skills/v2` (revised from the v1 analysis).
 
 Experiments live under `.skill-lab/experiments/<name>/`:
 

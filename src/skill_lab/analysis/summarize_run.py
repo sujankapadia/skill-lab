@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from skill_lab.analysis.evidence import EvidenceLimits, build_evidence
-from skill_lab.analysis.model import AnalysisModel
+from skill_lab.analysis.model import AnalysisModel, looks_like_placeholder
 from skill_lab.models.experiment import ExperimentPaths, Manifest
 from skill_lab.models.run_record import RunRecord
 from skill_lab.models.run_summary import RUN_SUMMARY_SCHEMA, RunSummary
@@ -51,7 +51,23 @@ def summary_path(paths: ExperimentPaths, run_id: str) -> Path:
 
 
 def load_summaries(paths: ExperimentPaths) -> list[RunSummary]:
-    return [RunSummary.load(p) for p in sorted(paths.runs_dir.glob(f"*/{SUMMARY_FILENAME}"))]
+    """All valid summaries. A placeholder summary (see looks_like_placeholder)
+    is ignored so that `summarize` regenerates it and `analyze` refuses to run
+    without it."""
+    out = []
+    for p in sorted(paths.runs_dir.glob(f"*/{SUMMARY_FILENAME}")):
+        s = RunSummary.load(p)
+        if not looks_like_placeholder({"approach": s.approach, "steps": s.steps, "outcome": s.outcome}):
+            out.append(s)
+    return out
+
+
+def has_valid_summary(paths: ExperimentPaths, run_id: str) -> bool:
+    p = summary_path(paths, run_id)
+    if not p.exists():
+        return False
+    s = RunSummary.load(p)
+    return not looks_like_placeholder({"approach": s.approach, "steps": s.steps, "outcome": s.outcome})
 
 
 def summarize_experiment(
@@ -67,7 +83,7 @@ def summarize_experiment(
     prompt = manifest.prompt["text"]
     skill_md = skill_md_for(paths, manifest)
 
-    todo = [r for r in records if force or not summary_path(paths, r.run_id).exists()]
+    todo = [r for r in records if force or not has_valid_summary(paths, r.run_id)]
 
     failures: dict[str, Exception] = {}
 

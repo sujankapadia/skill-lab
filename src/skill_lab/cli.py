@@ -10,7 +10,7 @@ from pathlib import Path
 from skill_lab.analysis.analyze_runs import analyze_runs
 from skill_lab.analysis.compare import ExperimentBundle, compare_experiments
 from skill_lab.analysis.model import ClaudeCliModel
-from skill_lab.analysis.summarize_run import load_summaries, skill_md_for, summarize_experiment, summary_path
+from skill_lab.analysis.summarize_run import has_valid_summary, load_summaries, skill_md_for, summarize_experiment, summary_path
 from skill_lab.experiment import DEFAULT_ROOT, load_runs, normalize_experiment, run_experiment
 from skill_lab.models.experiment import ExperimentConfig, ExperimentPaths, Manifest
 from skill_lab.models.run_summary import RunSummary
@@ -62,7 +62,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 def _analyze(paths: ExperimentPaths, records, model_name: str, concurrency: int, force: bool) -> int:
     model = ClaudeCliModel(model=model_name)
-    pending = [r for r in records if force or not summary_path(paths, r.run_id).exists()]
+    pending = [r for r in records if force or not has_valid_summary(paths, r.run_id)]
     if pending:
         print(f"Summarizing {len(pending)} run(s) with {model_name} (concurrency {concurrency})...", flush=True)
         summarize_experiment(
@@ -114,7 +114,7 @@ def cmd_summarize(args: argparse.Namespace) -> int:
         wanted = {r.zfill(3) for r in args.run}
         records = [r for r in records if r.run_id in wanted]
     model = ClaudeCliModel(model=args.model)
-    pending = [r for r in records if args.force or not summary_path(paths, r.run_id).exists()]
+    pending = [r for r in records if args.force or not has_valid_summary(paths, r.run_id)]
     print(f"summarizing {len(pending)} run(s) with {args.model} via claude -p (concurrency {args.concurrency})", flush=True)
     summarize_experiment(
         paths, records, model, concurrency=args.concurrency, force=args.force,

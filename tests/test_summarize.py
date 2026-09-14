@@ -80,3 +80,15 @@ def test_summarize_run_uses_prompt_and_schema(tmp_path: Path, workspace: Path):
     p = tmp_path / "summary.json"
     summary.save(p)
     assert RunSummary.load(p) == summary
+
+
+def test_looks_like_placeholder():
+    from skill_lab.analysis.model import looks_like_placeholder
+    assert looks_like_placeholder({"approach": "test", "steps": ["a", "b", "c"], "outcome": "test"})
+    assert looks_like_placeholder({"approach": "test", "steps": ["test"]})
+    assert not looks_like_placeholder({
+        "approach": "The agent explored the repo and rewrote the architecture doc.",
+        "steps": ["ran find to list files", "read docs/architecture.md", "wrote the new doc"],
+        "outcome": "docs/architecture.md rewritten, +80 -3",
+        "possible_problems": [],
+    })

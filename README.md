@@ -4,37 +4,54 @@ Run an agent skill many times against the same task via [Harbor](https://github.
 collect what the agent did, and analyze variation across runs. See
 `skill-lab-project.md` for the full plan.
 
-## Status: Phase 0 (Harbor spike) — done
+## Status
 
-`src/skill_lab/spike.py` proves Harbor can produce the behavioral dataset we need.
-Findings and answers to the open questions are in `docs/harbor-spike.md`.
+- **Phase 0 — Harbor spike: done.** Findings in `docs/harbor-spike.md`.
+- **Phase 1 — normalize runs: done.** `skill-lab run` / `inspect` / `normalize`.
+- Phase 2 (per-run summaries), 3 (cross-run analysis), 4 (compare): next.
 
 ## Prerequisites
 
 - Docker
-- `uv tool install harbor` (pinned at 0.23.0 during the spike)
-- `ANTHROPIC_API_KEY` in the environment
+- `uv` (this project) and `uv tool install harbor` (pinned at 0.23.0 during the spike)
+- A Claude subscription token: `claude setup-token`, exported as `CLAUDE_CODE_OAUTH_TOKEN`
 
-## Run the spike
+## Usage
 
 ```bash
-python3 src/skill_lab/spike.py \
+uv sync
+
+# Run an experiment: N Claude Code trials of one skill against one repo + prompt.
+uv run skill-lab run \
   --skill ./examples/architecture-docs/architecture-documentation \
   --repo  ./examples/architecture-docs/repo \
   --prompt-file ./examples/architecture-docs/prompt.md \
-  --attempts 3 --concurrency 3 --name spike-3 \
-  --json .skill-lab/spike/spike-3/runs.json
+  --attempts 20 --concurrency 4 --name arch-v1
+
+# Table of runs (time, tool calls, files changed, tokens, cost).
+uv run skill-lab inspect arch-v1
+
+# Full detail (tool-call sequence, final response, paths) for specific runs.
+uv run skill-lab inspect arch-v1 --run 3 8
+
+# Rebuild runs/ from the Harbor job without re-running the agent.
+uv run skill-lab normalize arch-v1
 ```
 
-Re-parse an existing job without re-running:
+Experiments live under `.skill-lab/experiments/<name>/`:
+
+```
+experiment.yaml     # what was run: skill digest, repo commit, prompt, agent, Harbor version
+task/               # generated Harbor task (Dockerfile bakes in the repo + Claude Code)
+harbor/<name>/      # Harbor job: one trial dir per attempt (trajectory, workspace, result)
+runs/NNN/           # normalized RunRecord (run.json), diff.patch, diff-stat.json
+```
+
+## Tests
 
 ```bash
-python3 src/skill_lab/spike.py --parse-only .skill-lab/spike/spike-3/harbor/spike-3
+uv run pytest
 ```
-
-Output per trial: completion status, error, duration, tokens/cost, tool-call
-sequence, final response, trajectory path, workspace path, files
-created/modified/deleted, and git diff stats.
 
 ## Billing
 

@@ -1,0 +1,57 @@
+from pathlib import Path
+
+from conftest import make_trial
+from skill_lab.harbor.parser import HarborJobParser
+from skill_lab.harbor.trajectory import parse_trajectory, summarize_call
+
+
+def test_trials_sorted_by_start_time(tmp_path: Path, workspace: Path):
+    job = tmp_path / "job"
+    make_trial(job, "task__zzz", "2026-09-14T10:00:00+00:00", workspace)
+    make_trial(job, "task__aaa", "2026-09-14T10:05:00+00:00", workspace)
+    names = [t.name for t in HarborJobParser(job).trials()]
+    assert names == ["task__zzz", "task__aaa"]
+
+
+def test_normalize_completed_trial(tmp_path: Path, workspace: Path):
+    (workspace / "docs" / "architecture.md").write_text("new\n")
+    job = tmp_path / "job"
+    make_trial(job, "task__abc", "2026-09-14T10:00:00+00:00", workspace)
+
+    trial = HarborJobParser(job).trials()[0]
+    record, changes = HarborJobParser(job).normalize(trial, "exp", "001")
+
+    assert record.completed and record.error is None
+    assert record.run_id == "001" and record.harbor_trial_name == "task__abc"
+    assert record.duration_seconds == 30.0
+    assert (record.input_tokens, record.output_tokens, record.cost_usd) == (100, 10, 0.01)
+    assert record.model == "claude-sonnet-5" and record.agent_version == "2.1.270"
+    assert [tc.name for tc in record.tool_calls] == ["Skill", "Bash", "Read", "Write"]
+    assert record.commands == ["find . -maxdepth 2"]
+    assert record.final_response == "I rewrote docs/architecture.md."
+    assert record.files_modified == ["docs/architecture.md"]
+    assert record.diff_stats.files_changed == 1
+    assert changes is not None and "architecture.md" in changes.patch
+    assert trial.skill_digest == "sha256:abc"
+
+
+def test_normalize_failed_trial_without_workspace(tmp_path: Path):
+    job = tmp_path / "job"
+    make_trial(job, "task__t", "2026-09-14T10:00:00+00:00", None,
+               exception={"exception_type": "TimeoutError", "exception_message": "Agent execution timed out"})
+    trial = HarborJobParser(job).trials()[0]
+    record, changes = HarborJobParser(job).normalize(trial, "exp", "001")
+    assert not record.completed
+    assert record.error == "Agent execution timed out"
+    assert record.workspace_path is None and changes is None
+    assert record.diff_stats is None
+    # Partial trajectory is still usable.
+    assert len(record.tool_calls) == 4
+
+
+def test_summarize_call():
+    assert summarize_call("Bash", {"command": "ls  -la\n", "description": "x"}) == "ls -la"
+    assert summarize_call("Read", {"file_path": "/app/x"}) == "/app/x"
+    assert summarize_call("Weird", {"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
+    assert summarize_call("Weird", None) == ""
+    assert summarize_call("Bash", {"command": "x" * 300}).endswith("…")

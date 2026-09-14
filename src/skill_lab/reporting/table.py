@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from skill_lab.models.analysis import Analysis
 from skill_lab.models.experiment import Manifest
 from skill_lab.models.run_record import RunRecord
 from skill_lab.models.run_summary import RunSummary
@@ -75,4 +76,36 @@ def summary_detail(s: RunSummary) -> str:
     lines += block("possible problems", s.possible_problems)
     lines += block("strengths", s.strengths)
     lines += block("uncertainties", s.uncertainties)
+    return "\n".join(lines)
+
+
+def analysis_brief(a: Analysis) -> str:
+    """The §23 terminal view: strategies, headline problems, strong runs, suggestions."""
+    def ids(xs: list[str]) -> str:
+        return ", ".join("#" + x.lstrip("0") for x in xs) if xs else "—"
+
+    lines = [a.overview.strip(), "", f"{len(a.clusters)} execution strategies emerged:"]
+    for c in a.clusters:
+        lines.append(f"  {c.name:<28} {len(c.run_ids):>2}/{a.run_count} runs   {c.description}")
+    if a.recurring_problems:
+        lines += ["", "Recurring concerns:"]
+        for f in a.recurring_problems:
+            lines.append(f"  - {f.title} ({len(f.run_ids)} runs: {ids(f.run_ids)})")
+    if a.outliers:
+        lines += ["", "Outliers:"]
+        for f in a.outliers:
+            lines.append(f"  - {f.title} ({ids(f.run_ids)})")
+    if a.strong_runs:
+        lines += ["", "Strong runs: " + ids([s.run_id for s in a.strong_runs])]
+        for s in a.strong_runs[:3]:
+            for r in s.reasons[:2]:
+                lines.append(f"  #{s.run_id.lstrip('0')}: {r}")
+    if a.skill_observations:
+        lines += ["", "Likely skill ambiguities:"]
+        lines += [f"  - {o}" for o in a.skill_observations]
+    if a.suggested_changes:
+        lines += ["", "Suggested SKILL.md changes:"]
+        for i, c in enumerate(a.suggested_changes, 1):
+            lines.append(f"  {i}. {c.change}")
+            lines.append(f"     because: {c.motivation} ({ids(c.run_ids)})")
     return "\n".join(lines)

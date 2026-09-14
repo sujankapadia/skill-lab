@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from typing import Protocol
 
 
@@ -26,11 +27,26 @@ class ClaudeCliModel:
     back under ``structured_output`` in the JSON envelope.
     """
 
-    def __init__(self, model: str = "sonnet", timeout_s: float = 300.0) -> None:
+    def __init__(self, model: str = "sonnet", timeout_s: float = 300.0, retries: int = 2) -> None:
         self.model = model
         self.timeout_s = timeout_s
+        self.retries = retries
 
     def generate_json(self, system_prompt: str, prompt: str, schema: dict) -> dict:
+        # The CLI occasionally fails transiently (rate limit, API hiccup) with
+        # a bare exit 1; retry with backoff before giving up.
+        last: Exception | None = None
+        for attempt in range(self.retries + 1):
+            try:
+                return self._call(system_prompt, prompt, schema)
+            except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
+                last = exc
+                if attempt < self.retries:
+                    time.sleep(5 * (attempt + 1))
+        assert last is not None
+        raise last
+
+    def _call(self, system_prompt: str, prompt: str, schema: dict) -> dict:
         # Without the API key the CLI falls back to the logged-in subscription.
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
         cmd = [
@@ -48,7 +64,8 @@ class ClaudeCliModel:
             cmd, capture_output=True, text=True, env=env, timeout=self.timeout_s, cwd="/",  # no project dir, so nothing else gets pulled into context
         )
         if proc.returncode != 0:
-            raise RuntimeError(f"claude -p failed ({proc.returncode}): {proc.stderr.strip()[:2000]}")
+            detail = (proc.stderr.strip() or proc.stdout.strip())[-2000:]
+            raise RuntimeError(f"claude -p failed ({proc.returncode}): {detail or '(no output)'}")
         envelope = json.loads(proc.stdout)
         if envelope.get("is_error"):
             raise RuntimeError(f"claude -p returned an error: {envelope.get('result')}")

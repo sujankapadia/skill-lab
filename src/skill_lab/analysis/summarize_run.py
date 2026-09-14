@@ -65,23 +65,35 @@ def summarize_experiment(
     """Summarize every run lacking a summary.json (or all, with force)."""
     manifest = Manifest.load(paths.manifest)
     prompt = manifest.prompt["text"]
-    skill_md = _skill_md(paths, manifest)
+    skill_md = skill_md_for(paths, manifest)
 
     todo = [r for r in records if force or not summary_path(paths, r.run_id).exists()]
 
-    def work(record: RunRecord) -> RunSummary:
-        summary = summarize_run(record, prompt, skill_md, model)
+    failures: dict[str, Exception] = {}
+
+    def work(record: RunRecord) -> None:
+        try:
+            summary = summarize_run(record, prompt, skill_md, model)
+        except Exception as exc:  # one bad run must not sink the batch
+            failures[record.run_id] = exc
+            return
         summary.save(summary_path(paths, record.run_id))
         if on_done:
             on_done(summary)
-        return summary
 
     with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
         list(pool.map(work, todo))
+    if failures:
+        detail = "; ".join(f"run {rid}: {exc}" for rid, exc in sorted(failures.items()))
+        raise SummarizeError(f"{len(failures)} run(s) failed to summarize (re-run to retry): {detail}")
     return load_summaries(paths)
 
 
-def _skill_md(paths: ExperimentPaths, manifest: Manifest) -> str:
+class SummarizeError(RuntimeError):
+    pass
+
+
+def skill_md_for(paths: ExperimentPaths, manifest: Manifest) -> str:
     """Prefer the experiment's snapshot; fall back to the original path for
     experiments created before snapshots existed."""
     if paths.skill_md.exists():

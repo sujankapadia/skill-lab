@@ -9,7 +9,8 @@ collect what the agent did, and analyze variation across runs. See
 - **Phase 0 — Harbor spike: done.** Findings in `docs/harbor-spike.md`.
 - **Phase 1 — normalize runs: done.** `skill-lab run` / `inspect` / `normalize`.
 - **Phase 2 — per-run summaries: done.** `skill-lab summarize`.
-- Phase 3 (cross-run analysis), 4 (compare): next.
+- **Phase 3 — cross-run analysis: done.** `skill-lab analyze` → `analysis.json` + `report.md`; `run` does it automatically.
+- Phase 4 (compare two experiments): next.
 
 ## Prerequisites
 
@@ -22,7 +23,8 @@ collect what the agent did, and analyze variation across runs. See
 ```bash
 uv sync
 
-# Run an experiment: N Claude Code trials of one skill against one repo + prompt.
+# Run an experiment: N Claude Code trials of one skill against one repo + prompt,
+# then summarize each run and analyze them together (pass --no-analyze to stop early).
 uv run skill-lab run \
   --skill ./examples/architecture-docs/architecture-documentation \
   --repo  ./examples/architecture-docs/repo \
@@ -40,6 +42,9 @@ uv run skill-lab normalize arch-v1
 
 # Write an LLM behavioral summary (summary.json) per run; `inspect --run N` shows it.
 uv run skill-lab summarize arch-v1 --concurrency 3
+
+# Cross-run analysis (summarizes any runs that lack a summary first).
+uv run skill-lab analyze arch-v1
 ```
 
 Experiments live under `.skill-lab/experiments/<name>/`:
@@ -50,6 +55,8 @@ task/               # generated Harbor task (Dockerfile bakes in the repo + Clau
 harbor/<name>/      # Harbor job: one trial dir per attempt (trajectory, workspace, result)
 skill/              # snapshot of the skill directory as it was run
 runs/NNN/           # run.json (RunRecord), diff.patch, diff-stat.json, summary.json
+analysis.json       # clusters, recurring patterns/problems, outliers, strong runs, suggested changes
+report.md           # the same, written for the skill author
 ```
 
 ## Tests

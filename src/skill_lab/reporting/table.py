@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from skill_lab.models.experiment import Manifest
 from skill_lab.models.run_record import RunRecord
+from skill_lab.models.run_summary import RunSummary
 
 
 def _fmt(value, spec: str = "") -> str:
@@ -59,4 +60,19 @@ def run_detail(r: RunRecord) -> str:
     lines.append("  " + resp.replace("\n", "\n  ") if resp else "  (none)")
     lines.append(f"trajectory: {r.trajectory_path}")
     lines.append(f"workspace:  {r.workspace_path}")
+    return "\n".join(lines)
+
+
+def summary_detail(s: RunSummary) -> str:
+    def block(title: str, items: list[str]) -> list[str]:
+        return [f"{title}:"] + ([f"  - {i}" for i in items] or ["  (none)"])
+
+    lines = [f"--- Summary (by {s.model}, {s.evidence_chars} chars of evidence) ---",
+             f"approach: {s.approach}",
+             f"outcome:  {s.outcome}"]
+    lines += block("steps", s.steps)
+    lines += block("notable behaviors", s.notable_behaviors)
+    lines += block("possible problems", s.possible_problems)
+    lines += block("strengths", s.strengths)
+    lines += block("uncertainties", s.uncertainties)
     return "\n".join(lines)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 from skill_lab.harbor.parser import HarborJobParser
@@ -23,6 +24,9 @@ def run_experiment(config: ExperimentConfig, root: Path) -> ExperimentPaths:
     job_name = config.id
     manifest = build_manifest(config, job_name)
     manifest.save(paths.manifest)
+    # Snapshot the skill so later analysis reads what actually ran, not
+    # whatever the author has edited since.
+    shutil.copytree(config.skill, paths.skill_dir)
 
     runner = HarborRunner(config, paths)
     runner.build_task()

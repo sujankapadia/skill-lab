@@ -36,6 +36,7 @@ class ExperimentPaths:
 
     <root>/
     ├── experiment.yaml
+    ├── skill/           # snapshot of the skill directory as run
     ├── task/            # generated Harbor task
     ├── harbor/<id>/     # Harbor job output (trials live here; never copied)
     ├── runs/NNN/        # run.json, diff.patch, diff-stat.json
@@ -48,6 +49,14 @@ class ExperimentPaths:
     @property
     def manifest(self) -> Path:
         return self.root / MANIFEST_FILENAME
+
+    @property
+    def skill_dir(self) -> Path:
+        return self.root / "skill"
+
+    @property
+    def skill_md(self) -> Path:
+        return self.skill_dir / "SKILL.md"
 
     @property
     def task_dir(self) -> Path:

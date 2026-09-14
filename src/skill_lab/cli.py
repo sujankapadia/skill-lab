@@ -7,9 +7,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+from skill_lab.analysis.model import ClaudeCliModel
+from skill_lab.analysis.summarize_run import load_summaries, summarize_experiment, summary_path
 from skill_lab.experiment import DEFAULT_ROOT, load_runs, normalize_experiment, run_experiment
 from skill_lab.models.experiment import ExperimentConfig, ExperimentPaths, Manifest
-from skill_lab.reporting.table import experiment_header, run_detail, runs_table
+from skill_lab.models.run_summary import RunSummary
+from skill_lab.reporting.table import experiment_header, run_detail, runs_table, summary_detail
 
 
 def _resolve_experiment(arg: str) -> ExperimentPaths:
@@ -62,11 +65,34 @@ def cmd_inspect(args: argparse.Namespace) -> int:
         for r in records:
             if r.run_id in wanted:
                 print(run_detail(r))
+                sp = summary_path(paths, r.run_id)
+                if sp.exists():
+                    print()
+                    print(summary_detail(RunSummary.load(sp)))
                 print()
         return 0
     print(experiment_header(manifest, records))
     print()
     print(runs_table(records))
+    return 0
+
+
+def cmd_summarize(args: argparse.Namespace) -> int:
+    paths = _resolve_experiment(args.experiment)
+    records = load_runs(paths)
+    if not records:
+        sys.exit("no runs found; run `skill-lab normalize` first")
+    if args.run:
+        wanted = {r.zfill(3) for r in args.run}
+        records = [r for r in records if r.run_id in wanted]
+    model = ClaudeCliModel(model=args.model)
+    pending = [r for r in records if args.force or not summary_path(paths, r.run_id).exists()]
+    print(f"summarizing {len(pending)} run(s) with {args.model} via claude -p (concurrency {args.concurrency})", flush=True)
+    summarize_experiment(
+        paths, records, model, concurrency=args.concurrency, force=args.force,
+        on_done=lambda s: print(f"  run {s.run_id}: {s.approach[:90]}", flush=True),
+    )
+    print(f"{len(load_summaries(paths))} summaries in {paths.runs_dir}")
     return 0
 
 
@@ -102,6 +128,14 @@ def build_parser() -> argparse.ArgumentParser:
     inspect.add_argument("experiment", help="Experiment directory or id")
     inspect.add_argument("--run", nargs="+", help="Show full detail for these run ids")
     inspect.set_defaults(func=cmd_inspect)
+
+    summarize = sub.add_parser("summarize", help="Write an LLM behavioral summary (summary.json) for each run")
+    summarize.add_argument("experiment", help="Experiment directory or id")
+    summarize.add_argument("--run", nargs="+", help="Only these run ids")
+    summarize.add_argument("--model", default="sonnet", help="Claude model alias for the summarizer")
+    summarize.add_argument("--concurrency", type=int, default=2)
+    summarize.add_argument("--force", action="store_true", help="Re-summarize runs that already have a summary")
+    summarize.set_defaults(func=cmd_summarize)
 
     normalize = sub.add_parser("normalize", help="(Re)build runs/ from the experiment's Harbor job")
     normalize.add_argument("experiment", help="Experiment directory or id")

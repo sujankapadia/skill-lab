@@ -1,0 +1,92 @@
+"""Per-run summarization: RunRecord + evidence -> RunSummary (§12)."""
+
+from __future__ import annotations
+
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+
+from skill_lab.analysis.evidence import EvidenceLimits, build_evidence
+from skill_lab.analysis.model import AnalysisModel
+from skill_lab.models.experiment import ExperimentPaths, Manifest
+from skill_lab.models.run_record import RunRecord
+from skill_lab.models.run_summary import RUN_SUMMARY_SCHEMA, RunSummary
+
+PROMPTS_DIR = Path(__file__).resolve().parent.parent / "prompts"
+SUMMARY_FILENAME = "summary.json"
+
+
+def load_prompt(name: str) -> str:
+    return (PROMPTS_DIR / f"{name}.md").read_text()
+
+
+def summarize_run(
+    record: RunRecord,
+    prompt: str,
+    skill_md: str,
+    model: AnalysisModel,
+    limits: EvidenceLimits | None = None,
+) -> RunSummary:
+    evidence = build_evidence(record, prompt, skill_md, limits)
+    result = model.generate_json(
+        system_prompt=load_prompt("summarize-run"),
+        prompt=evidence,
+        schema=RUN_SUMMARY_SCHEMA,
+    )
+    return RunSummary(
+        run_id=record.run_id,
+        approach=result["approach"],
+        steps=list(result["steps"]),
+        outcome=result["outcome"],
+        notable_behaviors=list(result.get("notable_behaviors", [])),
+        possible_problems=list(result.get("possible_problems", [])),
+        strengths=list(result.get("strengths", [])),
+        uncertainties=list(result.get("uncertainties", [])),
+        model=getattr(model, "model", None),
+        evidence_chars=len(evidence),
+    )
+
+
+def summary_path(paths: ExperimentPaths, run_id: str) -> Path:
+    return paths.run_dir(run_id) / SUMMARY_FILENAME
+
+
+def load_summaries(paths: ExperimentPaths) -> list[RunSummary]:
+    return [RunSummary.load(p) for p in sorted(paths.runs_dir.glob(f"*/{SUMMARY_FILENAME}"))]
+
+
+def summarize_experiment(
+    paths: ExperimentPaths,
+    records: list[RunRecord],
+    model: AnalysisModel,
+    concurrency: int = 2,
+    force: bool = False,
+    on_done=None,
+) -> list[RunSummary]:
+    """Summarize every run lacking a summary.json (or all, with force)."""
+    manifest = Manifest.load(paths.manifest)
+    prompt = manifest.prompt["text"]
+    skill_md = _skill_md(paths, manifest)
+
+    todo = [r for r in records if force or not summary_path(paths, r.run_id).exists()]
+
+    def work(record: RunRecord) -> RunSummary:
+        summary = summarize_run(record, prompt, skill_md, model)
+        summary.save(summary_path(paths, record.run_id))
+        if on_done:
+            on_done(summary)
+        return summary
+
+    with ThreadPoolExecutor(max_workers=max(1, concurrency)) as pool:
+        list(pool.map(work, todo))
+    return load_summaries(paths)
+
+
+def _skill_md(paths: ExperimentPaths, manifest: Manifest) -> str:
+    """Prefer the experiment's snapshot; fall back to the original path for
+    experiments created before snapshots existed."""
+    if paths.skill_md.exists():
+        return paths.skill_md.read_text()
+    original = Path(manifest.skill["path"]) / "SKILL.md"
+    if original.exists():
+        return original.read_text()
+    raise FileNotFoundError(f"SKILL.md not found in {paths.skill_dir} or {original}")

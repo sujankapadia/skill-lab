@@ -8,7 +8,8 @@ collect what the agent did, and analyze variation across runs. See
 
 - **Phase 0 — Harbor spike: done.** Findings in `docs/harbor-spike.md`.
 - **Phase 1 — normalize runs: done.** `skill-lab run` / `inspect` / `normalize`.
-- Phase 2 (per-run summaries), 3 (cross-run analysis), 4 (compare): next.
+- **Phase 2 — per-run summaries: done.** `skill-lab summarize`.
+- Phase 3 (cross-run analysis), 4 (compare): next.
 
 ## Prerequisites
 
@@ -36,6 +37,9 @@ uv run skill-lab inspect arch-v1 --run 3 8
 
 # Rebuild runs/ from the Harbor job without re-running the agent.
 uv run skill-lab normalize arch-v1
+
+# Write an LLM behavioral summary (summary.json) per run; `inspect --run N` shows it.
+uv run skill-lab summarize arch-v1 --concurrency 3
 ```
 
 Experiments live under `.skill-lab/experiments/<name>/`:
@@ -44,7 +48,8 @@ Experiments live under `.skill-lab/experiments/<name>/`:
 experiment.yaml     # what was run: skill digest, repo commit, prompt, agent, Harbor version
 task/               # generated Harbor task (Dockerfile bakes in the repo + Claude Code)
 harbor/<name>/      # Harbor job: one trial dir per attempt (trajectory, workspace, result)
-runs/NNN/           # normalized RunRecord (run.json), diff.patch, diff-stat.json
+skill/              # snapshot of the skill directory as it was run
+runs/NNN/           # run.json (RunRecord), diff.patch, diff-stat.json, summary.json
 ```
 
 ## Tests

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from skill_lab.models.analysis import Analysis, Finding
+from skill_lab.models.comparison import Comparison
 from skill_lab.models.experiment import Manifest
 from skill_lab.models.run_record import RunRecord
 
@@ -82,4 +83,46 @@ def render_report(manifest: Manifest, records: list[RunRecord], analysis: Analys
             f"{s.deletions if s else '-'} | {touched} |"
         )
     lines.append("")
+    return "\n".join(lines)
+
+
+def frequency_table(c: Comparison) -> str:
+    """The §17 table: behavior | A | B, as observed frequencies."""
+    w = max((len(b.behavior) for b in c.behaviors), default=8)
+    w = min(max(w, 8), 70)
+    lines = [f"{'Observation':<{w}}  {c.a_id:>10}  {c.b_id:>10}"]
+    for b in c.behaviors:
+        name = b.behavior if len(b.behavior) <= w else b.behavior[: w - 1] + "…"
+        lines.append(f"{name:<{w}}  {f'{len(b.a_run_ids)}/{c.a_run_count}':>10}  {f'{len(b.b_run_ids)}/{c.b_run_count}':>10}")
+    return "\n".join(lines)
+
+
+def render_comparison(c: Comparison) -> str:
+    lines = [
+        f"# Skill Lab comparison: {c.a_id} → {c.b_id}",
+        "",
+        f"- A: `{c.a_id}` — {c.a_run_count} runs, skill {c.a_skill_digest}",
+        f"- B: `{c.b_id}` — {c.b_run_count} runs, skill {c.b_skill_digest}",
+        f"- Compared by: {c.model} ({c.input_chars} chars of input)",
+        "",
+    ]
+    if c.compatibility_warnings:
+        lines += ["> **Warning:** " + "; ".join(c.compatibility_warnings) + ".", ""]
+    lines += [
+        "Numbers are observed behavioral frequencies (runs exhibiting the behavior), not quality scores.",
+        "",
+        "## Summary", "", c.summary, "",
+        "## Behavior frequencies", "",
+        f"| Observation | {c.a_id} | {c.b_id} |", "|---|---|---|",
+    ]
+    for b in c.behaviors:
+        lines.append(f"| {b.behavior} | {len(b.a_run_ids)}/{c.a_run_count} | {len(b.b_run_ids)}/{c.b_run_count} |")
+    lines += ["", "<details><summary>Run ids per behavior</summary>", ""]
+    for b in c.behaviors:
+        lines.append(f"- {b.behavior}: A {_runs(b.a_run_ids)}; B {_runs(b.b_run_ids)}")
+    lines += ["", "</details>", ""]
+    lines += ["## Behavior consistency", "", f"- {c.a_id}: {c.consistency.get('a', '?')}", f"- {c.b_id}: {c.consistency.get('b', '?')}", ""]
+    for title, items in (("Improvements", c.improvements), ("New behavior in B", c.new_behaviors), ("Remaining issues", c.remaining_issues)):
+        lines += [f"## {title}", ""] + ([f"- {i}" for i in items] or ["None identified."]) + [""]
+    lines += ["## SKILL.md diff", "", "```diff", c.skill_diff.rstrip() or "(no textual difference)", "```", ""]
     return "\n".join(lines)

@@ -3,13 +3,14 @@
 import argparse
 import sys
 
-from sample_app.service import InventoryService
-from sample_app.storage.json_store import JsonStore
+from inventory.api.server import serve
+from inventory.config import store_from_env
+from inventory.service import InventoryService
+from inventory.worker.importer import import_csv
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="sample_app")
-    parser.add_argument("--store", default="inventory.json", help="Path to the JSON store")
+    parser = argparse.ArgumentParser(prog="inventory")
     sub = parser.add_subparsers(dest="command", required=True)
 
     add = sub.add_parser("add", help="Add quantity of an item")
@@ -21,12 +22,18 @@ def build_parser() -> argparse.ArgumentParser:
     remove.add_argument("quantity", type=int)
 
     sub.add_parser("list", help="List all items")
+
+    serve_cmd = sub.add_parser("serve", help="Run the HTTP API")
+    serve_cmd.add_argument("--port", type=int, default=8080)
+
+    imp = sub.add_parser("import", help="Bulk import from a CSV of name,quantity rows")
+    imp.add_argument("path")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    service = InventoryService(JsonStore(args.store))
+    service = InventoryService(store_from_env())
 
     if args.command == "add":
         service.add(args.name, args.quantity)
@@ -39,4 +46,9 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "list":
         for name, qty in sorted(service.list_items().items()):
             print(f"{name}\t{qty}")
+    elif args.command == "serve":
+        serve(service, args.port)
+    elif args.command == "import":
+        report = import_csv(service, args.path)
+        print(f"imported {report.imported} rows, skipped {report.skipped}")
     return 0

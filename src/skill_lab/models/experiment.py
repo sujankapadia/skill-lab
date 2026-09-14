@@ -106,12 +106,20 @@ class Manifest:
         return cls(**yaml.safe_load(path.read_text()))
 
 
-def compute_skill_digest(skill_dir: Path) -> str:
+REPO_DIGEST_IGNORE = {".git", "__pycache__", ".pytest_cache", ".venv", "node_modules", ".DS_Store"}
+
+
+def compute_skill_digest(skill_dir: Path, ignore: set[str] = frozenset()) -> str:
     """Same algorithm as harbor.skills.compute_skill_digest, so the value here
-    matches the one Harbor writes to each trial's lock.json."""
+    matches the one Harbor writes to each trial's lock.json. With `ignore`, also
+    used for the repository fixture (which is why paths under ignored
+    directories are skipped rather than hashed)."""
     hasher = hashlib.sha256()
     for file_path in sorted(p for p in skill_dir.rglob("*") if p.is_file()):
-        hasher.update(file_path.relative_to(skill_dir).as_posix().encode())
+        rel = file_path.relative_to(skill_dir)
+        if ignore and (set(rel.parts) & ignore):
+            continue
+        hasher.update(rel.as_posix().encode())
         hasher.update(b"\0")
         hasher.update(hashlib.sha256(file_path.read_bytes()).hexdigest().encode())
         hasher.update(b"\0")
@@ -152,7 +160,11 @@ def build_manifest(config: ExperimentConfig, job_name: str) -> Manifest:
             "name": config.skill.resolve().name,
             "digest": compute_skill_digest(config.skill),
         },
-        repository={"source": str(config.repo), **_git_commit(config.repo)},
+        repository={
+            "source": str(config.repo),
+            "digest": compute_skill_digest(config.repo, REPO_DIGEST_IGNORE),
+            **_git_commit(config.repo),
+        },
         agent={
             "name": config.agent,
             "model": config.model,

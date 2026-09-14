@@ -1,7 +1,7 @@
 import pytest
 
-from sample_app.service import InventoryService
-from sample_app.storage.memory_store import MemoryStore
+from inventory.service import InventoryService
+from inventory.storage.memory_store import MemoryStore
 
 
 def make_service() -> InventoryService:

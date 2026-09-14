@@ -1,4 +1,4 @@
-"""JSON-file backed store."""
+"""JSON-file backed store (the default)."""
 
 import json
 from pathlib import Path

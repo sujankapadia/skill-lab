@@ -8,12 +8,13 @@ from datetime import datetime
 from pathlib import Path
 
 from skill_lab.analysis.analyze_runs import analyze_runs
+from skill_lab.analysis.compare import ExperimentBundle, compare_experiments
 from skill_lab.analysis.model import ClaudeCliModel
 from skill_lab.analysis.summarize_run import load_summaries, skill_md_for, summarize_experiment, summary_path
 from skill_lab.experiment import DEFAULT_ROOT, load_runs, normalize_experiment, run_experiment
 from skill_lab.models.experiment import ExperimentConfig, ExperimentPaths, Manifest
 from skill_lab.models.run_summary import RunSummary
-from skill_lab.reporting.markdown import render_report
+from skill_lab.reporting.markdown import frequency_table, render_comparison, render_report
 from skill_lab.reporting.table import analysis_brief, experiment_header, run_detail, runs_table, summary_detail
 
 
@@ -131,6 +132,33 @@ def cmd_analyze(args: argparse.Namespace) -> int:
     return _analyze(paths, records, args.model, args.concurrency, args.force)
 
 
+def cmd_compare(args: argparse.Namespace) -> int:
+    a = ExperimentBundle.load(_resolve_experiment(args.a))
+    b = ExperimentBundle.load(_resolve_experiment(args.b))
+    out_dir = args.output or (DEFAULT_ROOT.parent / "comparisons" / f"{a.manifest.id}--{b.manifest.id}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    print(f"Comparing {a.manifest.id} ({len(a.records)} runs) -> {b.manifest.id} ({len(b.records)} runs) with {args.model}...", flush=True)
+    comparison = compare_experiments(a, b, ClaudeCliModel(model=args.model))
+    comparison.save(out_dir / "comparison.json")
+    (out_dir / "report.md").write_text(render_comparison(comparison))
+
+    print()
+    for w in comparison.compatibility_warnings:
+        print(f"warning: {w}")
+    print(frequency_table(comparison))
+    print()
+    print(f"Behavior consistency:\n  {a.manifest.id}: {comparison.consistency.get('a')}\n  {b.manifest.id}: {comparison.consistency.get('b')}")
+    print()
+    print(comparison.summary)
+    for title, items in (("Improvements", comparison.improvements), ("New behavior in B", comparison.new_behaviors), ("Remaining issues", comparison.remaining_issues)):
+        if items:
+            print(f"\n{title}:")
+            print("\n".join(f"  - {i}" for i in items))
+    print(f"\nReport: {out_dir / 'report.md'}")
+    return 0
+
+
 def cmd_normalize(args: argparse.Namespace) -> int:
     paths = _resolve_experiment(args.experiment)
     records = normalize_experiment(paths)
@@ -181,6 +209,13 @@ def build_parser() -> argparse.ArgumentParser:
     analyze.add_argument("--concurrency", type=int, default=3, help="Parallel summarizer calls")
     analyze.add_argument("--force", action="store_true", help="Re-summarize every run before analyzing")
     analyze.set_defaults(func=cmd_analyze)
+
+    compare = sub.add_parser("compare", help="Compare observed behavior between two experiments (e.g. skill v1 vs v2)")
+    compare.add_argument("a", help="Baseline experiment directory or id")
+    compare.add_argument("b", help="Revised experiment directory or id")
+    compare.add_argument("--model", default="sonnet")
+    compare.add_argument("--output", type=Path, help="Output directory (default: .skill-lab/comparisons/<a>--<b>)")
+    compare.set_defaults(func=cmd_compare)
 
     normalize = sub.add_parser("normalize", help="(Re)build runs/ from the experiment's Harbor job")
     normalize.add_argument("experiment", help="Experiment directory or id")

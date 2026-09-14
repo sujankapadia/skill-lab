@@ -1,6 +1,6 @@
 """Business rules for the inventory. Knows nothing about how data is persisted."""
 
-from sample_app.storage.base import Store
+from inventory.storage.base import Store
 
 
 class InventoryService:
@@ -15,6 +15,8 @@ class InventoryService:
         self._store.save(items)
 
     def remove(self, name: str, quantity: int) -> None:
+        if quantity <= 0:
+            raise ValueError("quantity must be positive")
         items = self._store.load()
         current = items.get(name, 0)
         if quantity > current:

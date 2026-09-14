@@ -1,6 +1,10 @@
 # Architecture
 
 The inventory service is a single script, `inventory.py`, that reads and writes
-`inventory.json` directly.
+`inventory.json` directly. Commands are parsed with `sys.argv`.
 
-(This document has not been updated since the project was restructured.)
+```
+inventory.py  <-->  inventory.json
+```
+
+(Last updated before the 0.2 restructure.)

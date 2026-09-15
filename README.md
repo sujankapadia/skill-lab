@@ -129,6 +129,48 @@ and comparing skill versions. Harbor's on-disk layout is known to exactly two
 modules (`harbor/runner.py`, `harbor/parser.py`) so the rest of the codebase —
 and a future second agent backend — is insulated from it.
 
+### How the workspace diff is produced
+
+"What did this run change?" is the other half of the evidence, alongside the
+trajectory. It is a plain `git diff`, taken in three stages:
+
+**1. The baseline is baked into the image**, not created per trial:
+
+```dockerfile
+WORKDIR /app
+COPY repo/ /app/
+RUN git init -q && git add -A && git commit -qm "baseline"
+```
+
+Because the commit lives in the image, all 20 containers start from a
+byte-identical tree at the same commit — which is what makes the runs
+comparable at all.
+
+**2. Harbor extracts the finished workspace.** The generated `task.toml`
+declares `[[artifacts]] source = "/app"`, so after the agent stops, Harbor tars
+that directory out to `<trial>/artifacts/app/` — `.git` included, so the
+baseline commit travels with it.
+
+**3. Skill Lab diffs it on the host**, after the container is gone
+(`workspace/git_diff.py`):
+
+```bash
+git -C <workspace> status --porcelain --untracked-files=all   # created/modified/deleted
+GIT_INDEX_FILE=<abs>/.git/skill-lab-index git add -A          # stage into a scratch index
+git diff --cached --numstat HEAD                              # stats
+git diff --cached --binary HEAD                               # the patch
+```
+
+Untracked files never show up in `git diff`, so everything is staged first —
+but into a throwaway index file, leaving the downloaded workspace's own index
+untouched. The results become `runs/NNN/diff.patch` and `diff-stat.json`, plus
+the file lists and line counts on the `RunRecord`.
+
+Doing this on the host rather than in the container is deliberate: Harbor has
+no diff feature, its one pre-collection hook belongs to the verifier phase we
+disable, and host-side diffing still works when a trial times out or crashes,
+since Harbor downloads `/app` either way.
+
 `docs/harbor-spike.md` documents every Harbor behavior this depends on, each
 verified by running it rather than taken from documentation, including the
 workarounds needed for interactive mode. `skill-lab-project.md` is the original

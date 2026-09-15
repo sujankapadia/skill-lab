@@ -296,6 +296,35 @@ uv run skill-lab run --interactive \
 ended on an unanswered question); the evidence the summarizer sees is the full
 transcript. `--apt` adds packages the skill needs in the image.
 
+### What this does and does not test
+
+It is a **text channel**. The simulated user answers prose questions with
+prose. `AskUserQuestion` — Claude Code's structured multiple-choice prompt — is
+not available to the agent in either headless or ACP mode: across 20 runs of a
+skill built around it, every run searched for the tool, got "No matching
+deferred tools found", and fell back to asking in plain text. None ever called
+it.
+
+So for a skill whose instructions say "gather parameters using
+`AskUserQuestion` in rounds", these runs exercise its **fallback path**, not
+its intended one. You can still learn a lot from that — whether the agent asks
+for everything it needs, builds a valid config, handles the answers correctly,
+and what it does when the prescribed mechanism is missing (in our case: 18 of
+20 runs silently collapsed four staged rounds into one wall of text, which the
+skill gives no guidance for). You cannot learn whether the multiple-choice flow
+itself works well.
+
+This is not something Skill Lab can fix locally. A structured question would
+have to be surfaced by the ACP adapter, routed by `acpx`, and answered by the
+simulated user — and the middle link has no path for it: `acpx` resolves
+agent-initiated requests from a static policy, or denies them when there is no
+TTY, and the simulated user is a client issuing one message at a time with no
+way to receive a mid-turn callback.
+
+Interactive runs also have a second cost you may not expect: the simulated user
+is itself an agent, so it consumes tokens too. Harbor tracks its usage
+separately from the target's, and `skill-lab usage` does not yet include it.
+
 ## Tests
 
 ```bash

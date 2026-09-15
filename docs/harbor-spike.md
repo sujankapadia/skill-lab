@@ -243,7 +243,14 @@ Python generator producing a `.docx`), Harbor 0.23.0, claude-code-acp 0.16.2:
    `instruction.md` goes to the *user agent* as its private goal, so it carries
    the persona: how to open and what to answer. Claude Code's ACP adapter
    still has no `AskUserQuestion`; the agent asks in text and the user replies
-   in text, which the skill handled fine.
+   in text, which the skill handled fine. Verified across 20 runs: 20/20
+   searched for the tool and got "No matching deferred tools found", 0/20
+   called it. This cannot be worked around at our layer — the adapter would
+   have to surface it as an ACP client request, `acpx` would have to route it
+   (it only matches agent-initiated requests against a static policy, or denies
+   them with no TTY), and the simulated user has no way to receive a mid-turn
+   callback since it drives the session with one blocking `acpx prompt` at a
+   time.
 3. **Harbor bug: `--skill` is ignored in ACP mode.** `acp_install` skips the
    skill-registration step that `run()` performs, so the target never saw the
    skill and improvised a plausible SOW from scratch. Workaround: install the

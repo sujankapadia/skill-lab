@@ -12,23 +12,41 @@ containers, then tells you what actually varied.
 
 ## Why you should care
 
-A real example from this repo. A four-step documentation skill, run 20 times on
-one repository, looked perfectly reasonable — every run produced a decent
-document. But the repo also had a stale architecture blurb in its README, and
-the skill never said what to do about it:
+Here is a real finding from `examples/architecture-docs/` in this repo. The
+setup, which you can reproduce:
+
+- **The skill** (`skills/v1`) — four lines telling the agent to identify the
+  components of an application and write a Markdown document describing them.
+  The kind of skill you'd write in five minutes and consider done.
+- **The repository** — a small Python service whose architecture notes are
+  scattered and partly wrong: `docs/architecture.md` is stale, the README has
+  its own outdated "Architecture" paragraph, and `CONTRIBUTING.md` says where
+  docs are supposed to live.
+- **The prompt** — "Create architecture documentation for this application."
+
+Run it 20 times and every run produces a decent document. Nothing looks wrong.
+But the runs disagreed about something the skill never mentioned:
 
 ```
-Behavior                                    v1       v2
+Observed behavior                            v1      v2
 Updated the contradicting README section   10/20   20/20
-Read CONTRIBUTING.md for doc conventions    0/20    17/20
-Document well over the length guidance     12/20     0/20
-Modified source code (it shouldn't)          0/20     0/20
+Read CONTRIBUTING.md for doc conventions    0/20   17/20
+Document well over the length guidance     12/20    0/20
+Modified source code (it shouldn't)          0/20    0/20
 ```
 
-Ten runs fixed the README, ten left the repository contradicting itself — a
-coin flip nobody would ever notice one run at a time. Skill Lab found it,
-traced it to the missing instruction, and suggested the sentence to add. `v2`
-is that sentence. The right column is the same skill after the edit.
+Half the runs fixed the README so it matched the new document; half left the
+repository contradicting itself. A coin flip — invisible if you run the skill
+once, and easy to blame on "the model" if a user ever reports it.
+
+Skill Lab reported the split, traced it to the skill's silence about existing
+documentation, and proposed the instruction to add. `v2` is that skill with the
+proposed sentences added; the right-hand column is 20 fresh runs of it. The
+same comparison also caught something new the edit introduced: 3 of 20 v2 runs
+ignored the new "check CONTRIBUTING.md" instruction — the next thing to fix.
+
+These are observed behavioral frequencies, not quality scores. Skill Lab never
+claims a document was good; it reports what the agent did and how consistently.
 
 ## Why you should use it
 
@@ -48,14 +66,73 @@ varying is the skill.
 
 ## How it works
 
-Your skill + a repo fixture + a prompt → [Harbor](https://github.com/laude-institute/harbor)
-runs N isolated trials → each run's trajectory and workspace diff are normalized
-→ an LLM summarizes each run → a second pass finds clusters, recurring problems,
-outliers, strong runs, and suggested `SKILL.md` edits → `report.md`.
+```
+  your skill + repo fixture + prompt
+                 │
+                 ▼
+        ┌──────────────────┐
+        │   Skill Lab      │  builds a Harbor task: a Dockerfile that copies the
+        │   (experiment)   │  fixture to /app and commits it as the baseline
+        └────────┬─────────┘
+                 │  harbor run --n-attempts 20
+                 ▼
+        ┌──────────────────┐
+        │     Harbor       │  20 isolated containers, each installing and running
+        │  (execution)     │  Claude Code from the identical baseline
+        └────────┬─────────┘
+                 │  per trial: ATIF trajectory + the whole /app workspace
+                 ▼
+        ┌──────────────────┐
+        │   Normalizer     │  → runs/NNN/run.json: tool calls, commands, files
+        │                  │    created/modified/deleted, git diff, tokens, cost
+        └────────┬─────────┘
+                 ▼
+        ┌──────────────────┐
+        │   Summarizer     │  one LLM call per run: what it did, notable
+        │   (per run)      │    behaviors, possible problems — never a grade
+        └────────┬─────────┘
+                 ▼
+        ┌──────────────────┐
+        │  Cross-run       │  clusters, recurring problems, outliers, strong runs,
+        │  analyzer        │    suggested SKILL.md edits — each citing run ids
+        └────────┬─────────┘
+                 ▼
+          analysis.json + report.md        (and `compare` for v1 vs v2)
+```
 
-Harbor is the execution substrate (containers, agent installation, trajectories);
-Skill Lab is the behavior-analysis layer on top. `skill-lab-project.md` is the
-original design doc.
+### Harbor does the execution
+
+[Harbor](https://github.com/laude-institute/harbor) (Laude Institute) is an
+open framework for running coding agents in containers. Skill Lab does not
+reimplement any of it, and treats it as an external runtime driven through its
+CLI:
+
+| Harbor provides | Used here for |
+|---|---|
+| Containerized trials from one image | Every run starts from a byte-identical repository |
+| Agent installation (~40 agents) | Claude Code installed inside the container |
+| `--n-attempts`, `--n-concurrent` | The 20–50 repetitions, in parallel |
+| Skill injection (`--skill`) | Putting the `SKILL.md` under test in front of the agent |
+| ATIF trajectories | The behavioral record: every tool call, argument, and result |
+| Artifact collection | Pulling the finished workspace back out, `.git` included |
+| Simulated user (`--bridge acp`) | Skills that ask questions (see below) |
+
+Harbor's own purpose is benchmarking — run a task, score it with tests. Skill
+Lab uses the execution half and **disables the verifier entirely**: there is no
+reward, because the point is to observe behavior, not score it.
+
+### Skill Lab does the analysis
+
+Everything after execution: normalizing each trial into a `RunRecord`,
+computing the workspace diff, summarizing runs, finding cross-run patterns,
+and comparing skill versions. Harbor's on-disk layout is known to exactly two
+modules (`harbor/runner.py`, `harbor/parser.py`) so the rest of the codebase —
+and a future second agent backend — is insulated from it.
+
+`docs/harbor-spike.md` documents every Harbor behavior this depends on, each
+verified by running it rather than taken from documentation, including the
+workarounds needed for interactive mode. `skill-lab-project.md` is the original
+design document.
 
 ## Status
 
@@ -126,31 +203,31 @@ v1 split 10/20 on whether to reconcile the README's stale architecture section;
 v2, which tells the agent to, went 20/20 — and surfaced a new 3/20 miss on
 reading CONTRIBUTING.md.
 
-## MVP definition of done (§22 of the plan)
+## What an experiment leaves behind
 
-| # | Criterion | Status |
-|---|---|---|
-| 1–4 | Real SKILL.md, realistic repo and prompt, 20 Claude Code runs via Harbor | done (`inv-v1`) |
-| 5 | Each run starts from the same repo state | baseline commit baked into the image; verified |
-| 6 | Trajectory + final workspace collected | ATIF + `/app` artifact per trial |
-| 7 | Each run summarized automatically | `summarize` |
-| 8 | Multiple behavioral patterns identified | 2 strategies (10/10) in v1 |
-| 9 | A recurring problem surfaced | README left contradictory in 10/20 |
-| 10 | A strong run identified with reasons | yes (e.g. #4, #7: flagged the inconsistency instead of guessing) |
-| 11 | A SKILL.md improvement tied to evidence | yes; became v2 |
-| 12–14 | Edit, rerun 20×, compare | `inv-v2` + `compare`: 10/20 → 20/20 |
+Every claim in a report names the runs it rests on, and every run keeps the raw
+evidence behind it — so "8 of 20 runs did X" is something you can go read.
 
 Experiments live under `.skill-lab/experiments/<name>/`:
 
 ```
-experiment.yaml     # what was run: skill digest, repo commit, prompt, agent, Harbor version
-task/               # generated Harbor task (Dockerfile bakes in the repo + Claude Code)
-harbor/<name>/      # Harbor job: one trial dir per attempt (trajectory, workspace, result)
-skill/              # snapshot of the skill directory as it was run
-runs/NNN/           # run.json (RunRecord), diff.patch, diff-stat.json, summary.json
-analysis.json       # clusters, recurring patterns/problems, outliers, strong runs, suggested changes
-report.md           # the same, written for the skill author
+experiment.yaml     # exactly what was run: skill digest, fixture digest + commit,
+                    #   prompt, agent, model, Harbor version, timestamps
+skill/              # snapshot of the skill as it ran, so later analysis reads the
+                    #   version that produced these runs, not your latest edit
+task/               # the generated Harbor task (Dockerfile, instruction, config)
+harbor/<name>/      # Harbor's output: one trial directory per attempt
+runs/NNN/           # run.json      — the normalized RunRecord
+                    #   diff.patch    — what this run changed, in full
+                    #   summary.json  — the per-run behavioral summary
+analysis.json       # machine-readable findings, each with run ids
+report.md           # the same findings, written for a skill author to read
 ```
+
+Reproducibility is the reason for the digests: an experiment records the exact
+skill contents and fixture contents it used, so `compare` can warn you when two
+experiments differ in more than the skill — a different prompt, a changed
+fixture, another model — instead of silently attributing that to your edit.
 
 ## Interactive skills
 

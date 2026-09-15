@@ -73,3 +73,26 @@ def test_normalize_interactive_trial_converts_native_session(tmp_path: Path, wor
     assert record.trajectory_path == str(run_dir / "trajectory.json")
     assert [tc.name for tc in record.tool_calls] == ["Bash"]
     assert record.awaiting_input is True
+
+
+def test_trajectory_is_copied_into_the_run_dir(tmp_path: Path, workspace: Path):
+    """Headless trials: runs/NNN/ owns a copy, so the run survives deletion of
+    the Harbor job directory."""
+    import json
+    import shutil
+    job = tmp_path / "job"
+    make_trial(job, "task__c", "2026-09-14T10:00:00+00:00", workspace)
+    run_dir = tmp_path / "runs" / "001"
+    run_dir.mkdir(parents=True)
+    parser = HarborJobParser(job)
+    trial = parser.trials()[0]
+    record, _ = parser.normalize(trial, "exp", "001", run_dir)
+
+    copied = run_dir / "trajectory.json"
+    assert record.trajectory_path == str(copied)
+    assert record.harbor_trajectory_path == str(trial.trajectory_path)
+    assert json.loads(copied.read_text()) == json.loads(trial.trajectory_path.read_text())
+
+    # The copy is still readable once Harbor's job directory is gone.
+    shutil.rmtree(job)
+    assert json.loads(copied.read_text())["schema_version"] == "ATIF-v1.7"

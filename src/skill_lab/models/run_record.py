@@ -56,7 +56,10 @@ class RunRecord:
 
     harbor_trial_name: str | None = None
     harbor_trial_path: str = ""
+    # Our own copy under runs/<id>/; survives deletion of the Harbor job dir.
     trajectory_path: str | None = None
+    # Harbor's original, when it wrote one (headless trials only).
+    harbor_trajectory_path: str | None = None
     workspace_path: str | None = None
 
     agent_name: str | None = None

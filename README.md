@@ -217,12 +217,18 @@ skill/              # snapshot of the skill as it ran, so later analysis reads t
                     #   version that produced these runs, not your latest edit
 task/               # the generated Harbor task (Dockerfile, instruction, config)
 harbor/<name>/      # Harbor's output: one trial directory per attempt
-runs/NNN/           # run.json      — the normalized RunRecord
-                    #   diff.patch    — what this run changed, in full
-                    #   summary.json  — the per-run behavioral summary
+runs/NNN/           # run.json        — the normalized RunRecord
+                    #   trajectory.json — the run's own copy of the ATIF trajectory
+                    #   diff.patch      — what this run changed, in full
+                    #   summary.json    — the per-run behavioral summary
 analysis.json       # machine-readable findings, each with run ids
 report.md           # the same findings, written for a skill author to read
 ```
+
+`runs/` is self-contained: each run keeps its own trajectory (~100 KB), so you
+can delete the bulky `harbor/` job directory — container logs, session files,
+workspace copies — and still re-summarize, re-analyze and compare. Workspaces
+stay referenced in place rather than copied; they are the large ones.
 
 Reproducibility is the reason for the digests: an experiment records the exact
 skill contents and fixture contents it used, so `compare` can warn you when two

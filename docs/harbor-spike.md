@@ -310,8 +310,10 @@ Use `result.json.started_at` to order runs.
 
 - Validate skill dir name vs. frontmatter `name`.
 - Order runs by `started_at`, not directory name.
-- `run.json` should reference `<trial>/agent/trajectory.json` and
-  `<trial>/artifacts/app` rather than copying them.
+- `run.json` references `<trial>/artifacts/app` rather than copying it, but
+  **copies** the trajectory into `runs/NNN/trajectory.json` (~100 KB/run against
+  ~850 KB/run for the trial directory) so a run stays analyzable after the
+  Harbor job directory is deleted. `harbor_trajectory_path` keeps the origin.
 - Add a `.dockerignore`-style exclude list for fixture copying (currently hardcoded).
 - The three spike runs behaved almost identically (all updated the stale doc in
   place, 16 tool calls each). The example skill/fixture may need to be less

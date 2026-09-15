@@ -7,6 +7,7 @@ docs/harbor-spike.md). The rest of Skill Lab works with RunRecords.
 from __future__ import annotations
 
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +18,7 @@ from skill_lab.models.run_record import RunRecord
 from skill_lab.workspace.git_diff import WorkspaceChanges, workspace_changes
 
 WORKSPACE_ARTIFACT = "app"  # mirrors the container's /app
+TRAJECTORY_FILENAME = "trajectory.json"
 
 
 @dataclass
@@ -47,14 +49,24 @@ class HarborTrial:
         return (self.path / "user-agent").is_dir()
 
     def ensure_trajectory(self, out_dir: Path) -> Path | None:
-        """Harbor's ATIF trajectory if present; otherwise convert the native
-        Claude Code session (ACP/simulated-user trials) into out_dir."""
+        """Write this trial's trajectory into out_dir and return the path.
+
+        Headless trials: copy Harbor's ATIF. ACP/simulated-user trials: Harbor
+        writes none for the target, so convert the native Claude Code session.
+
+        The trajectory is the evidence every later stage reads, and it is small
+        (~100 KB/run against ~850 KB/run for the whole trial directory), so
+        runs/ owns a copy. That keeps a run re-summarizable and re-analyzable
+        after the bulky harbor/ job directory is deleted or the experiment is
+        moved. Workspaces stay referenced in place — those are the large ones.
+        """
+        out = out_dir / TRAJECTORY_FILENAME
         if self.trajectory_path:
-            return self.trajectory_path
+            shutil.copyfile(self.trajectory_path, out)
+            return out
         sessions = find_session_files(self.path / "agent")
         if not sessions:
             return None
-        out = out_dir / "trajectory.json"
         out.write_text(json.dumps(convert_session(sessions), indent=2))
         return out
 
@@ -111,6 +123,7 @@ class HarborJobParser:
             harbor_trial_name=trial.name,
             harbor_trial_path=str(trial.path),
             trajectory_path=None,
+            harbor_trajectory_path=str(trial.trajectory_path) if trial.trajectory_path else None,
             workspace_path=str(trial.workspace_path) if trial.workspace_path else None,
             agent_name=agent_info.get("name"),
             agent_version=agent_info.get("version"),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from skill_lab.models.analysis import Analysis, Finding
+from skill_lab.reporting.table import format_usage
 from skill_lab.models.comparison import Comparison
 from skill_lab.models.experiment import Manifest
 from skill_lab.models.run_record import RunRecord
@@ -71,7 +72,14 @@ def render_report(manifest: Manifest, records: list[RunRecord], analysis: Analys
         lines += [f"### {i}. {c.change.splitlines()[0][:80]}", "", f"> {c.change}", "",
                   f"Motivation: {c.motivation}", "", f"Runs: {_runs(c.run_ids)}", ""]
 
-    lines += ["## Run table", "", "| run | ok | secs | tools | files | +lines | -lines | modified/created |",
+    lines += ["## Cost", "",
+              f"- Summaries ({analysis.run_count} calls): {format_usage(analysis.summaries_usage)}",
+              f"- This analysis (1 call): {format_usage(analysis.usage)}",
+              "",
+              "Rollout usage per run is in the table below; all of it draws on the same "
+              "Claude subscription when `--auth subscription` is used.",
+              "",
+              "## Run table", "", "| run | ok | secs | tools | files | +lines | -lines | modified/created |",
               "|---|---|---|---|---|---|---|---|"]
     for r in records:
         s = r.diff_stats

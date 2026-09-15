@@ -11,6 +11,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from skill_lab.analysis.model import ModelUsage
+
 
 @dataclass
 class Finding:
@@ -57,6 +59,8 @@ class Analysis:
     suggested_changes: list[SuggestedChange] = field(default_factory=list)
     model: str | None = None
     input_chars: int | None = None
+    usage: ModelUsage | None = None          # this analysis call
+    summaries_usage: ModelUsage | None = None  # the per-run summaries it read
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -64,6 +68,8 @@ class Analysis:
     @classmethod
     def from_dict(cls, data: dict) -> "Analysis":
         data = dict(data)
+        data["usage"] = ModelUsage.from_dict(data.get("usage"))
+        data["summaries_usage"] = ModelUsage.from_dict(data.get("summaries_usage"))
         data["clusters"] = [Cluster(**c) for c in data.get("clusters", [])]
         for key in ("recurring_patterns", "recurring_problems", "outliers"):
             data[key] = [Finding(**f) for f in data.get(key, [])]

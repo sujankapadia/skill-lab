@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from skill_lab.analysis.model import ModelUsage
 from skill_lab.models.analysis import Analysis
 from skill_lab.models.experiment import Manifest
 from skill_lab.models.run_record import RunRecord
+from skill_lab.models.run_summary import RunSummary
 from skill_lab.models.run_summary import RunSummary
 
 
@@ -113,4 +115,40 @@ def analysis_brief(a: Analysis) -> str:
         for i, c in enumerate(a.suggested_changes, 1):
             lines.append(f"  {i}. {c.change}")
             lines.append(f"     because: {c.motivation} ({ids(c.run_ids)})")
+    return "\n".join(lines)
+
+
+def format_usage(usage: ModelUsage | None) -> str:
+    if usage is None:
+        return "not recorded"
+    cost = f"  ${usage.cost_usd:.2f}" if usage.cost_usd is not None else ""
+    cached = f" ({usage.cache_tokens:,} cached)" if usage.cache_tokens else ""
+    return f"{usage.input_tokens or 0:,} in{cached} / {usage.output_tokens or 0:,} out{cost}"
+
+
+def usage_report(records: list[RunRecord], summaries: list[RunSummary], analysis: Analysis | None) -> str:
+    """Rollout usage vs. analysis usage. Both draw on the same Claude
+    subscription, and the analysis side is easy to forget: a 20-run experiment
+    makes ~21 LLM calls beyond the runs themselves."""
+    rollout = ModelUsage(
+        sum(r.input_tokens or 0 for r in records),
+        sum(r.cache_tokens or 0 for r in records),
+        sum(r.output_tokens or 0 for r in records),
+        sum(r.cost_usd or 0.0 for r in records) or None,
+    )
+    from skill_lab.analysis.analyze_runs import total_usage
+
+    summaries_usage = total_usage(s.usage for s in summaries)
+    lines = [
+        f"Rollouts   ({len(records):>3} runs):  {format_usage(rollout)}",
+        f"Summaries  ({len(summaries):>3} calls): {format_usage(summaries_usage)}",
+    ]
+    if analysis is not None:
+        lines.append(f"Analysis   (  1 call):  {format_usage(analysis.usage)}")
+    known = [u for u in (rollout, summaries_usage, analysis.usage if analysis else None) if u is not None]
+    if known:
+        total = known[0]
+        for u in known[1:]:
+            total = total + u
+        lines.append(f"Total:                  {format_usage(total)}")
     return "\n".join(lines)

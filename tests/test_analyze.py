@@ -64,3 +64,31 @@ def test_analyze_runs_normalizes_ids_and_round_trips(tmp_path: Path):
     p = tmp_path / "analysis.json"
     a.save(p)
     assert Analysis.load(p) == a
+
+
+class UsageFakeModel(FakeModel):
+    def generate(self, system_prompt, prompt, schema):
+        from skill_lab.analysis.model import ModelUsage
+        return self.generate_json(system_prompt, prompt, schema), ModelUsage(500, 400, 20, 0.05)
+
+
+def test_analysis_records_own_and_summary_usage(tmp_path: Path):
+    from skill_lab.analysis.model import ModelUsage
+    records = [rec("001"), rec("002")]
+    sums = [summ("001"), summ("002")]
+    for s in sums:
+        s.usage = ModelUsage(100, 80, 10, 0.01)
+
+    a = analyze_runs("exp", "P", "S", records, sums, UsageFakeModel())
+    assert a.usage.cost_usd == 0.05
+    assert a.summaries_usage.input_tokens == 200 and a.summaries_usage.cost_usd == 0.02
+    p = tmp_path / "analysis.json"
+    a.save(p)
+    assert Analysis.load(p) == a
+
+
+def test_total_usage_ignores_unrecorded():
+    from skill_lab.analysis.analyze_runs import total_usage
+    from skill_lab.analysis.model import ModelUsage
+    assert total_usage([None, None]) is None
+    assert total_usage([None, ModelUsage(5, 1, 1, 0.1)]).input_tokens == 5

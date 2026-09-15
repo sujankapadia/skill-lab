@@ -6,7 +6,7 @@ import difflib
 from dataclasses import dataclass
 
 from skill_lab.analysis.analyze_runs import facts_table
-from skill_lab.analysis.model import AnalysisModel
+from skill_lab.analysis.model import AnalysisModel, call_model
 from skill_lab.analysis.summarize_run import load_prompt, load_summaries, skill_md_for
 from skill_lab.experiment import load_runs
 from skill_lab.models.analysis import Analysis
@@ -127,7 +127,8 @@ def build_comparison_input(a: ExperimentBundle, b: ExperimentBundle, diff: str) 
 def compare_experiments(a: ExperimentBundle, b: ExperimentBundle, model: AnalysisModel) -> Comparison:
     diff = skill_diff(a, b)
     text = build_comparison_input(a, b, diff)
-    result = model.generate_json(
+    result, usage = call_model(
+        model,
         system_prompt=load_prompt("compare-experiments"),
         prompt=text,
         schema=COMPARISON_SCHEMA,
@@ -155,6 +156,7 @@ def compare_experiments(a: ExperimentBundle, b: ExperimentBundle, model: Analysi
         remaining_issues=list(result["remaining_issues"]),
         model=getattr(model, "model", None),
         input_chars=len(text),
+        usage=usage,
     )
 
 

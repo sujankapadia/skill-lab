@@ -92,3 +92,36 @@ def test_looks_like_placeholder():
         "outcome": "docs/architecture.md rewritten, +80 -3",
         "possible_problems": [],
     })
+
+
+class UsageModel(FakeModel):
+    """A backend that reports usage, like ClaudeCliModel."""
+
+    def generate(self, system_prompt, prompt, schema):
+        from skill_lab.analysis.model import ModelUsage
+        return self.generate_json(system_prompt, prompt, schema), ModelUsage(1000, 900, 50, 0.02)
+
+
+def test_summary_records_usage_when_the_backend_reports_it(tmp_path: Path, workspace: Path):
+    from skill_lab.models.run_summary import RunSummary
+    record = _record(tmp_path, workspace)
+
+    plain = summarize_run(record, "p", "s", FakeModel())
+    assert plain.usage is None                      # backend without usage support
+
+    summary = summarize_run(record, "p", "s", UsageModel())
+    assert summary.usage.input_tokens == 1000 and summary.usage.cost_usd == 0.02
+    p = tmp_path / "summary.json"
+    summary.save(p)
+    assert RunSummary.load(p) == summary            # survives the round trip
+
+
+def test_usage_from_claude_envelope():
+    from skill_lab.analysis.model import _usage_from_envelope
+    u = _usage_from_envelope({
+        "usage": {"input_tokens": 4, "cache_creation_input_tokens": 100,
+                  "cache_read_input_tokens": 900, "output_tokens": 50},
+        "total_cost_usd": 0.02,
+    })
+    assert (u.input_tokens, u.cache_tokens, u.output_tokens, u.cost_usd) == (1004, 900, 50, 0.02)
+    assert _usage_from_envelope({}) is None

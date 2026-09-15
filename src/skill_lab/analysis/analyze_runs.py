@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from skill_lab.analysis.model import AnalysisModel
+from skill_lab.analysis.model import AnalysisModel, ModelUsage, call_model
 from skill_lab.analysis.summarize_run import load_prompt
 from skill_lab.models.analysis import (
     ANALYSIS_SCHEMA,
@@ -111,7 +111,8 @@ def analyze_runs(
     model: AnalysisModel,
 ) -> Analysis:
     text = build_analysis_input(prompt, skill_md, records, summaries)
-    result = model.generate_json(
+    result, usage = call_model(
+        model,
         system_prompt=load_prompt("analyze-runs"),
         prompt=text,
         schema=ANALYSIS_SCHEMA,
@@ -134,7 +135,20 @@ def analyze_runs(
         ],
         model=getattr(model, "model", None),
         input_chars=len(text),
+        usage=usage,
+        summaries_usage=total_usage(s.usage for s in summaries),
     )
+
+
+def total_usage(usages) -> ModelUsage | None:
+    """Sum the usages that were recorded; None when none were."""
+    known = [u for u in usages if u is not None]
+    if not known:
+        return None
+    total = known[0]
+    for u in known[1:]:
+        total = total + u
+    return total
 
 
 def _id(run_id: str) -> str:

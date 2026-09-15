@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from skill_lab.analysis.evidence import EvidenceLimits, build_evidence
-from skill_lab.analysis.model import AnalysisModel, looks_like_placeholder
+from skill_lab.analysis.model import AnalysisModel, call_model, looks_like_placeholder
 from skill_lab.models.experiment import ExperimentPaths, Manifest
 from skill_lab.models.run_record import RunRecord
 from skill_lab.models.run_summary import RUN_SUMMARY_SCHEMA, RunSummary
@@ -27,7 +27,8 @@ def summarize_run(
     limits: EvidenceLimits | None = None,
 ) -> RunSummary:
     evidence = build_evidence(record, prompt, skill_md, limits)
-    result = model.generate_json(
+    result, usage = call_model(
+        model,
         system_prompt=load_prompt("summarize-run"),
         prompt=evidence,
         schema=RUN_SUMMARY_SCHEMA,
@@ -43,6 +44,7 @@ def summarize_run(
         uncertainties=list(result.get("uncertainties", [])),
         model=getattr(model, "model", None),
         evidence_chars=len(evidence),
+        usage=usage,
     )
 
 

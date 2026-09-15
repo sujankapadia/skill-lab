@@ -9,6 +9,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from skill_lab.analysis.model import ModelUsage
+
 
 @dataclass
 class RunSummary:
@@ -20,15 +22,18 @@ class RunSummary:
     possible_problems: list[str] = field(default_factory=list)
     strengths: list[str] = field(default_factory=list)
     uncertainties: list[str] = field(default_factory=list)
-    # Provenance of the summary itself.
+    # Provenance and cost of the summary itself.
     model: str | None = None
     evidence_chars: int | None = None
+    usage: ModelUsage | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: dict) -> "RunSummary":
+        data = dict(data)
+        data["usage"] = ModelUsage.from_dict(data.get("usage"))
         return cls(**data)
 
     def save(self, path: Path) -> None:

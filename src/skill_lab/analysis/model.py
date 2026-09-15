@@ -2,6 +2,11 @@
 
 Every LLM-driven step in Skill Lab goes through ``AnalysisModel.generate_json``
 so the backend (and who pays for it) is a single config switch.
+
+Analysis calls are not free: a 20-run experiment makes ~21 of them, which on a
+Claude subscription draws from the same budget as the rollouts. Backends that
+can report usage implement ``generate`` and return it alongside the result;
+``call_model`` adapts either shape so callers can record it.
 """
 
 from __future__ import annotations
@@ -10,11 +15,50 @@ import json
 import os
 import subprocess
 import time
+from dataclasses import asdict, dataclass
 from typing import Protocol
+
+
+@dataclass
+class ModelUsage:
+    """What one analysis call consumed."""
+
+    input_tokens: int | None = None
+    cache_tokens: int | None = None
+    output_tokens: int | None = None
+    cost_usd: float | None = None
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict | None) -> "ModelUsage | None":
+        return cls(**data) if data else None
+
+    def __add__(self, other: "ModelUsage") -> "ModelUsage":
+        def add(a, b):
+            return None if a is None and b is None else (a or 0) + (b or 0)
+
+        return ModelUsage(
+            add(self.input_tokens, other.input_tokens),
+            add(self.cache_tokens, other.cache_tokens),
+            add(self.output_tokens, other.output_tokens),
+            add(self.cost_usd, other.cost_usd),
+        )
 
 
 class AnalysisModel(Protocol):
     def generate_json(self, system_prompt: str, prompt: str, schema: dict) -> dict: ...
+
+
+def call_model(
+    model: AnalysisModel, system_prompt: str, prompt: str, schema: dict
+) -> tuple[dict, ModelUsage | None]:
+    """Call *model*, returning its result and usage when the backend reports it."""
+    generate = getattr(model, "generate", None)
+    if callable(generate):
+        return generate(system_prompt=system_prompt, prompt=prompt, schema=schema)
+    return model.generate_json(system_prompt=system_prompt, prompt=prompt, schema=schema), None
 
 
 class PlaceholderOutput(RuntimeError):
@@ -59,15 +103,21 @@ class ClaudeCliModel:
         self.retries = retries
 
     def generate_json(self, system_prompt: str, prompt: str, schema: dict) -> dict:
+        return self.generate(system_prompt, prompt, schema)[0]
+
+    def generate(
+        self, system_prompt: str, prompt: str, schema: dict
+    ) -> tuple[dict, ModelUsage | None]:
         # The CLI occasionally fails transiently (rate limit, API hiccup) with
-        # a bare exit 1; retry with backoff before giving up.
+        # a bare exit 1; retry with backoff before giving up. Usage from a
+        # failed attempt is not recorded, so recorded totals are a floor.
         last: Exception | None = None
         for attempt in range(self.retries + 1):
             try:
-                result = self._call(system_prompt, prompt, schema)
+                result, usage = self._call(system_prompt, prompt, schema)
                 if looks_like_placeholder(result):
                     raise PlaceholderOutput(f"placeholder output: {json.dumps(result)[:200]}")
-                return result
+                return result, usage
             except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as exc:
                 last = exc
                 if attempt < self.retries:
@@ -75,7 +125,7 @@ class ClaudeCliModel:
         assert last is not None
         raise last
 
-    def _call(self, system_prompt: str, prompt: str, schema: dict) -> dict:
+    def _call(self, system_prompt: str, prompt: str, schema: dict) -> tuple[dict, ModelUsage | None]:
         # Without the API key the CLI falls back to the logged-in subscription.
         env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_API_KEY"}
         cmd = [
@@ -102,4 +152,25 @@ class ClaudeCliModel:
         if output is None:
             raise RuntimeError("claude -p returned no structured_output; envelope subtype="
                                f"{envelope.get('subtype')}")
-        return output
+        return output, _usage_from_envelope(envelope)
+
+
+def _usage_from_envelope(envelope: dict) -> ModelUsage | None:
+    """Pull token counts and cost out of the `claude -p --output-format json`
+    envelope. `input_tokens` counts everything sent (fresh + cache creation +
+    cache reads), matching how RunRecord reports rollout usage."""
+    usage = envelope.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    cache_read = usage.get("cache_read_input_tokens") or 0
+    total_input = (
+        (usage.get("input_tokens") or 0)
+        + (usage.get("cache_creation_input_tokens") or 0)
+        + cache_read
+    )
+    return ModelUsage(
+        input_tokens=total_input,
+        cache_tokens=cache_read,
+        output_tokens=usage.get("output_tokens") or 0,
+        cost_usd=envelope.get("total_cost_usd"),
+    )

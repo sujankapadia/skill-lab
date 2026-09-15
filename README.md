@@ -260,6 +260,28 @@ transcript. `--apt` adds packages the skill needs in the image.
 uv run pytest
 ```
 
+## Cost and usage
+
+Rollouts are not the whole bill. A 20-run experiment also makes ~21 LLM calls
+for analysis (one summary per run, plus the cross-run pass), and on a
+subscription those draw from the same allowance:
+
+```bash
+uv run skill-lab usage arch-v1
+```
+```
+Rollouts   ( 20 runs):  4,514,189 in (4,316,069 cached) / 76,659 out  $2.42
+Summaries  ( 20 calls): 565,000 in (347,000 cached) / 73,000 out      $1.80
+Analysis   (  1 call):  7,924 in / 3,317 out                          $0.07
+```
+
+Costs are estimates (LiteLLM pricing for rollouts, the CLI's own figure for
+analysis calls) — on a subscription nothing is billed per token. Usage is
+recorded on each `summary.json` and on `analysis.json`; `analyze` prints the
+breakdown when it finishes. On short experiments the analysis side can cost
+more than the runs themselves, so `--model haiku` for summarization is the
+first lever if you are near a limit.
+
 ## Billing
 
 Rollouts and analysis calls run on your Claude subscription by default:

@@ -15,7 +15,7 @@ from skill_lab.experiment import DEFAULT_ROOT, load_runs, normalize_experiment, 
 from skill_lab.models.experiment import ExperimentConfig, ExperimentPaths, Manifest
 from skill_lab.models.run_summary import RunSummary
 from skill_lab.reporting.markdown import frequency_table, render_comparison, render_report
-from skill_lab.reporting.table import analysis_brief, experiment_header, run_detail, runs_table, summary_detail
+from skill_lab.reporting.table import analysis_brief, experiment_header, run_detail, runs_table, summary_detail, usage_report
 
 
 def _resolve_experiment(arg: str) -> ExperimentPaths:
@@ -89,6 +89,8 @@ def _analyze(paths: ExperimentPaths, records, model_name: str, concurrency: int,
     paths.report.write_text(render_report(manifest, records, analysis))
     print()
     print(analysis_brief(analysis))
+    print()
+    print(usage_report(records, summaries, analysis))
     print()
     print(f"Report: {paths.report}")
     return 0
@@ -171,6 +173,16 @@ def cmd_compare(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_usage(args: argparse.Namespace) -> int:
+    from skill_lab.models.analysis import Analysis
+
+    paths = _resolve_experiment(args.experiment)
+    records = load_runs(paths)
+    analysis = Analysis.load(paths.analysis) if paths.analysis.exists() else None
+    print(usage_report(records, load_summaries(paths), analysis))
+    return 0
+
+
 def cmd_normalize(args: argparse.Namespace) -> int:
     paths = _resolve_experiment(args.experiment)
     records = normalize_experiment(paths)
@@ -234,6 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--model", default="sonnet")
     compare.add_argument("--output", type=Path, help="Output directory (default: .skill-lab/comparisons/<a>--<b>)")
     compare.set_defaults(func=cmd_compare)
+
+    usage = sub.add_parser("usage", help="Token and cost usage for an experiment: rollouts vs. analysis calls")
+    usage.add_argument("experiment", help="Experiment directory or id")
+    usage.set_defaults(func=cmd_usage)
 
     normalize = sub.add_parser("normalize", help="(Re)build runs/ from the experiment's Harbor job")
     normalize.add_argument("experiment", help="Experiment directory or id")

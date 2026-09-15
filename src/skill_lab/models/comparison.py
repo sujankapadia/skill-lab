@@ -6,6 +6,8 @@ import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from skill_lab.analysis.model import ModelUsage
+
 
 @dataclass
 class BehaviorFrequency:
@@ -37,6 +39,7 @@ class Comparison:
     remaining_issues: list[str] = field(default_factory=list)
     model: str | None = None
     input_chars: int | None = None
+    usage: ModelUsage | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -44,6 +47,7 @@ class Comparison:
     @classmethod
     def from_dict(cls, data: dict) -> "Comparison":
         data = dict(data)
+        data["usage"] = ModelUsage.from_dict(data.get("usage"))
         data["behaviors"] = [BehaviorFrequency(**b) for b in data.get("behaviors", [])]
         return cls(**data)
 

@@ -28,6 +28,12 @@ class ExperimentConfig:
     agent_timeout_sec: float = 900.0
     auth: str = "subscription"
     claude_code_version: str = "latest"
+    apt_packages: list[str] = field(default_factory=list)
+    # Interactive mode: a second agent plays the user, driven by `persona`
+    # (its private goal and the answers it should give). See docs/harbor-spike.md.
+    interactive: bool = False
+    persona: str | None = None
+    user_model: str | None = "anthropic/claude-sonnet-5"
 
 
 @dataclass
@@ -97,6 +103,7 @@ class Manifest:
     prompt: dict
     execution: dict
     harbor: dict = field(default_factory=dict)
+    environment: dict = field(default_factory=dict)
 
     def save(self, path: Path) -> None:
         path.write_text(yaml.safe_dump(self.__dict__, sort_keys=False))
@@ -170,8 +177,17 @@ def build_manifest(config: ExperimentConfig, job_name: str) -> Manifest:
             "model": config.model,
             "auth": config.auth,
             "claude_code_version": config.claude_code_version,
+            "interactive": config.interactive,
+            "user_model": config.user_model if config.interactive else None,
         },
-        prompt={"text": config.prompt},
+        prompt={
+            "text": config.prompt,
+            "persona": config.persona,
+            "persona_digest": (
+                "sha256:" + hashlib.sha256(config.persona.encode()).hexdigest() if config.persona else None
+            ),
+        },
+        environment={"apt_packages": list(config.apt_packages)},
         execution={
             "attempts": config.attempts,
             "concurrency": config.concurrency,

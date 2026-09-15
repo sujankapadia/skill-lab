@@ -64,9 +64,16 @@ def trajectory_evidence(trajectory_path: Path, limits: EvidenceLimits) -> str:
     traj = json.loads(trajectory_path.read_text())
     out: list[str] = []
     for step in traj.get("steps", []):
+        sid = step.get("step_id")
+        if step.get("source") == "user":
+            text = message_text(step.get("message")).strip()
+            if text.startswith("Base directory for this skill"):
+                continue  # SKILL.md injection; already shown above
+            if text:
+                out.append(f"[step {sid}] USER: {_clip(text, limits.message_chars)}")
+            continue
         if step.get("source") != "agent":
             continue
-        sid = step.get("step_id")
         text = message_text(step.get("message")).strip()
         if text:
             out.append(f"[step {sid}] agent: {_clip(text, limits.message_chars)}")
@@ -107,7 +114,8 @@ def build_evidence(
 ) -> str:
     limits = limits or EvidenceLimits()
     parts = [
-        "# Task prompt given to the agent",
+        "# Simulated user's private goal and answers (the agent saw only the messages the user sent)"
+        if record.interactive else "# Task prompt given to the agent",
         prompt.strip(),
         "",
         "# SKILL.md that was active",
@@ -117,8 +125,16 @@ def build_evidence(
         f"completed: {record.completed}" + (f"\nerror: {record.error}" if record.error else ""),
         f"duration_seconds: {record.duration_seconds}",
         f"tool_calls: {len(record.tool_calls)}   bash_commands: {len(record.commands)}",
+    ]
+    if record.interactive:
+        parts += [
+            f"mode: interactive — a simulated user (an LLM given a persona and the answers below) "
+            f"replied to the agent; user replies after the opening message: {record.user_turns}",
+            f"ended_awaiting_input: {record.awaiting_input}",
+        ]
+    parts += [
         "",
-        "# Trajectory (agent messages, tool calls, and truncated tool outputs)",
+        "# Trajectory (USER messages, agent messages, tool calls, and truncated tool outputs)",
     ]
     if record.trajectory_path and Path(record.trajectory_path).exists():
         parts.append(trajectory_evidence(Path(record.trajectory_path), limits))

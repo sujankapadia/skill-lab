@@ -45,6 +45,10 @@ def compatibility_warnings(a: Manifest, b: Manifest) -> list[str]:
     warnings = []
     if a.prompt["text"].strip() != b.prompt["text"].strip():
         warnings.append("prompts differ")
+    if a.prompt.get("persona_digest") != b.prompt.get("persona_digest"):
+        warnings.append("simulated-user personas differ")
+    if bool(a.agent.get("interactive")) != bool(b.agent.get("interactive")):
+        warnings.append("one experiment is interactive and the other is not")
     a_repo, b_repo = a.repository.get("digest"), b.repository.get("digest")
     if a_repo is None or b_repo is None:
         # Experiments created before fixture digests existed; fall back to the
@@ -92,8 +96,8 @@ def _summaries_block(label: str, bundle: ExperimentBundle) -> list[str]:
 
 def build_comparison_input(a: ExperimentBundle, b: ExperimentBundle, diff: str) -> str:
     parts = [
-        "# Task prompt (same in both experiments)",
-        a.manifest.prompt["text"].strip(),
+        "# Task prompt / simulated-user persona (same in both experiments)",
+        (a.manifest.prompt.get("persona") or a.manifest.prompt["text"]).strip(),
         "",
         f"# Experiment A: {a.manifest.id} ({len(a.records)} runs)",
         "## A: SKILL.md",

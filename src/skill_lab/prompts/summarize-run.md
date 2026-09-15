@@ -28,3 +28,9 @@ Rules:
   or if skipping it plausibly harmed the result. For example, not running a
   test suite is not a problem in a documentation-only task unless the agent
   made a claim that only running the tests could support.
+- Interactive runs: a simulated user (an LLM following a persona with fixed
+  answers) replied to the agent. Describe how the agent gathered input — what
+  it asked, in how many rounds, whether it used the skill's prescribed
+  mechanism or fell back to plain text, whether it asked for things the persona
+  could not answer, and whether it ended with an unanswered question. Treat the
+  simulated user's replies as given; do not evaluate the user.

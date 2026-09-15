@@ -55,3 +55,21 @@ def test_summarize_call():
     assert summarize_call("Weird", {"b": 1, "a": 2}) == '{"a": 2, "b": 1}'
     assert summarize_call("Weird", None) == ""
     assert summarize_call("Bash", {"command": "x" * 300}).endswith("…")
+
+
+def test_normalize_interactive_trial_converts_native_session(tmp_path: Path, workspace: Path):
+    import json
+    from test_claude_session import _write_session
+    job = tmp_path / "job"
+    trial = make_trial(job, "task__i", "2026-09-14T10:00:00+00:00", workspace)
+    (trial / "agent" / "trajectory.json").unlink()          # ACP mode: Harbor writes no ATIF
+    (trial / "user-agent").mkdir()
+    _write_session(trial)                                    # ...but the native session is there
+    run_dir = tmp_path / "runs" / "001"
+    run_dir.mkdir(parents=True)
+    parser = HarborJobParser(job)
+    record, _ = parser.normalize(parser.trials()[0], "exp", "001", run_dir)
+    assert record.interactive is True
+    assert record.trajectory_path == str(run_dir / "trajectory.json")
+    assert [tc.name for tc in record.tool_calls] == ["Bash"]
+    assert record.awaiting_input is True

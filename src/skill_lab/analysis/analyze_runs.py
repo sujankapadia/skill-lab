@@ -24,9 +24,14 @@ MAX_INPUT_CHARS = 400_000
 
 
 def facts_table(records: list[RunRecord]) -> str:
-    lines = ["run | ok | secs | tools | bash | files | +lines | -lines | created | modified | deleted"]
+    interactive = any(r.interactive for r in records)
+    header = "run | ok | secs | tools | bash | files | +lines | -lines | created | modified | deleted"
+    if interactive:
+        header += " | user_replies | ended_awaiting_input"
+    lines = [header]
     for r in records:
         s = r.diff_stats
+        extra = [str(r.user_turns), "yes" if r.awaiting_input else "no"] if interactive else []
         lines.append(" | ".join([
             r.run_id,
             "y" if r.completed else f"N ({r.error})",
@@ -39,6 +44,7 @@ def facts_table(records: list[RunRecord]) -> str:
             ",".join(r.files_created) or "-",
             ",".join(r.files_modified) or "-",
             ",".join(r.files_deleted) or "-",
+            *extra,
         ]))
     return "\n".join(lines)
 

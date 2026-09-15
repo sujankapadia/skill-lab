@@ -80,7 +80,7 @@ def summarize_experiment(
 ) -> list[RunSummary]:
     """Summarize every run lacking a summary.json (or all, with force)."""
     manifest = Manifest.load(paths.manifest)
-    prompt = manifest.prompt["text"]
+    prompt = manifest.prompt.get("persona") or manifest.prompt["text"]
     skill_md = skill_md_for(paths, manifest)
 
     todo = [r for r in records if force or not has_valid_summary(paths, r.run_id)]

@@ -40,6 +40,8 @@ class TrajectoryFacts:
     commands: list[str] = field(default_factory=list)
     final_response: str | None = None
     final_metrics: dict = field(default_factory=dict)
+    user_turns: int = 0            # user messages after the first (i.e. replies)
+    awaiting_input: bool = False   # last step is an agent message ending in a question
 
 
 def message_text(message) -> str:
@@ -76,7 +78,14 @@ def parse_trajectory(path: Path) -> TrajectoryFacts:
         n_steps=len(traj.get("steps", [])),
         final_metrics=traj.get("final_metrics") or {},
     )
-    for step in traj.get("steps", []):
+    steps = traj.get("steps", [])
+    user_messages = [s for s in steps if s.get("source") == "user" and message_text(s.get("message")).strip()
+                     and not message_text(s.get("message")).startswith("Base directory for this skill")]
+    facts.user_turns = max(0, len(user_messages) - 1)
+    last = steps[-1] if steps else None
+    if last and last.get("source") == "agent" and not (last.get("tool_calls") or []):
+        facts.awaiting_input = message_text(last.get("message")).rstrip().endswith("?")
+    for step in steps:
         if step.get("source") != "agent":
             continue
         for call in step.get("tool_calls") or []:

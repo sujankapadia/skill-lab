@@ -38,3 +38,7 @@ Rules:
   harm the result (e.g. "did not run the tests" on a documentation-only
   task). If nearly every run omits it and the omission is harmless, it is at
   most a recurring pattern.
+- Interactive runs: the facts table shows how many replies the simulated user
+  gave and whether the run ended awaiting input. How the agent gathers input
+  (rounds, batching, use of the skill's prescribed mechanism, questions the
+  persona could not answer) is behavior worth clustering and reporting.

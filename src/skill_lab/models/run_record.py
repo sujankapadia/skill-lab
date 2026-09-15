@@ -63,6 +63,12 @@ class RunRecord:
     agent_version: str | None = None
     model: str | None = None
 
+    # Interactive (simulated-user) runs.
+    interactive: bool = False
+    user_trajectory_path: str | None = None
+    user_turns: int = 0            # messages the simulated user sent
+    awaiting_input: bool = False   # the agent's last message was a question nobody answered
+
     def to_dict(self) -> dict:
         return asdict(self)
 

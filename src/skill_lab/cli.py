@@ -30,9 +30,16 @@ def _resolve_experiment(arg: str) -> ExperimentPaths:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    if not (args.prompt or args.prompt_file):
-        sys.exit("one of --prompt / --prompt-file is required")
-    prompt = args.prompt_file.read_text() if args.prompt_file else args.prompt
+    if args.interactive:
+        if not args.persona_file:
+            sys.exit("--interactive requires --persona-file (the simulated user's goal and answers)")
+        persona = args.persona_file.read_text()
+        prompt = args.prompt_file.read_text() if args.prompt_file else (args.prompt or persona.strip().splitlines()[0])
+    else:
+        if not (args.prompt or args.prompt_file):
+            sys.exit("one of --prompt / --prompt-file is required")
+        persona = None
+        prompt = args.prompt_file.read_text() if args.prompt_file else args.prompt
     config = ExperimentConfig(
         id=args.name or datetime.now().strftime("exp-%Y%m%d-%H%M%S"),
         skill=args.skill,
@@ -45,6 +52,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         agent_timeout_sec=args.agent_timeout,
         auth=args.auth,
         claude_code_version=args.claude_code_version,
+        apt_packages=args.apt or [],
+        interactive=args.interactive,
+        persona=persona,
+        user_model=args.user_model,
     )
     paths = run_experiment(config, args.output)
     manifest = Manifest.load(paths.manifest)
@@ -72,7 +83,8 @@ def _analyze(paths: ExperimentPaths, records, model_name: str, concurrency: int,
     summaries = load_summaries(paths)
     manifest = Manifest.load(paths.manifest)
     print(f"Analyzing {len(records)} runs with {model_name}...", flush=True)
-    analysis = analyze_runs(manifest.id, manifest.prompt["text"], skill_md_for(paths, manifest), records, summaries, model)
+    task_text = manifest.prompt.get("persona") or manifest.prompt["text"]
+    analysis = analyze_runs(manifest.id, task_text, skill_md_for(paths, manifest), records, summaries, model)
     analysis.save(paths.analysis)
     paths.report.write_text(render_report(manifest, records, analysis))
     print()
@@ -183,6 +195,12 @@ def build_parser() -> argparse.ArgumentParser:
                      help="Bill rollouts to the Claude subscription (needs CLAUDE_CODE_OAUTH_TOKEN) or the API key")
     run.add_argument("--agent-timeout", type=float, default=900.0, help="Per-trial agent timeout in seconds")
     run.add_argument("--claude-code-version", default="latest", help="Claude Code version baked into the image")
+    run.add_argument("--apt", nargs="+", metavar="PKG", help="Extra apt packages to install in the image (e.g. python3-docx)")
+    run.add_argument("--interactive", action="store_true",
+                     help="Multi-turn trial: a simulated user (Claude Code with a persona) answers the agent's questions")
+    run.add_argument("--persona-file", type=Path,
+                     help="Interactive mode: the simulated user's private goal and the answers it should give")
+    run.add_argument("--user-model", default="anthropic/claude-sonnet-5", help="Model for the simulated user")
     run.add_argument("--name", help="Experiment id (default: timestamp)")
     run.add_argument("--output", type=Path, default=DEFAULT_ROOT, help="Experiments root directory")
     run.add_argument("--no-analyze", action="store_true", help="Stop after normalizing; skip summaries and analysis")

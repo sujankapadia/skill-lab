@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from skill_lab.harbor.claude_session import convert_session, find_session_files
 from skill_lab.harbor.trajectory import parse_trajectory
 from skill_lab.models.run_record import RunRecord
 from skill_lab.workspace.git_diff import WorkspaceChanges, workspace_changes
@@ -35,6 +36,27 @@ class HarborTrial:
     def trajectory_path(self) -> Path | None:
         p = self.path / "agent" / "trajectory.json"
         return p if p.exists() else None
+
+    @property
+    def user_trajectory_path(self) -> Path | None:
+        p = self.path / "user-agent" / "trajectory.json"
+        return p if p.exists() else None
+
+    @property
+    def is_interactive(self) -> bool:
+        return (self.path / "user-agent").is_dir()
+
+    def ensure_trajectory(self, out_dir: Path) -> Path | None:
+        """Harbor's ATIF trajectory if present; otherwise convert the native
+        Claude Code session (ACP/simulated-user trials) into out_dir."""
+        if self.trajectory_path:
+            return self.trajectory_path
+        sessions = find_session_files(self.path / "agent")
+        if not sessions:
+            return None
+        out = out_dir / "trajectory.json"
+        out.write_text(json.dumps(convert_session(sessions), indent=2))
+        return out
 
     @property
     def workspace_path(self) -> Path | None:
@@ -66,7 +88,9 @@ class HarborJobParser:
             trials.append(HarborTrial(result_path.parent, result))
         return sorted(trials, key=lambda t: (t.started_at or "", t.path.name))
 
-    def normalize(self, trial: HarborTrial, experiment_id: str, run_id: str) -> tuple[RunRecord, WorkspaceChanges | None]:
+    def normalize(
+        self, trial: HarborTrial, experiment_id: str, run_id: str, run_dir: Path | None = None
+    ) -> tuple[RunRecord, WorkspaceChanges | None]:
         result = trial.result
         exception = result.get("exception_info") or {}
         agent_result = result.get("agent_result") or {}
@@ -86,20 +110,30 @@ class HarborJobParser:
             cost_usd=agent_result.get("cost_usd"),
             harbor_trial_name=trial.name,
             harbor_trial_path=str(trial.path),
-            trajectory_path=str(trial.trajectory_path) if trial.trajectory_path else None,
+            trajectory_path=None,
             workspace_path=str(trial.workspace_path) if trial.workspace_path else None,
             agent_name=agent_info.get("name"),
             agent_version=agent_info.get("version"),
             model=(agent_info.get("model_info") or {}).get("name"),
+            interactive=trial.is_interactive,
+            user_trajectory_path=str(trial.user_trajectory_path) if trial.user_trajectory_path else None,
         )
 
-        if trial.trajectory_path:
-            facts = parse_trajectory(trial.trajectory_path)
+        trajectory = trial.ensure_trajectory(run_dir) if run_dir else trial.trajectory_path
+        if trajectory:
+            record.trajectory_path = str(trajectory)
+            facts = parse_trajectory(trajectory)
             record.tool_calls = facts.tool_calls
             record.commands = facts.commands
             record.final_response = facts.final_response
             record.model = record.model or facts.model
             record.agent_version = record.agent_version or facts.agent_version
+            record.user_turns = facts.user_turns
+            record.awaiting_input = facts.awaiting_input
+            if record.input_tokens is None and facts.final_metrics:
+                record.input_tokens = facts.final_metrics.get("total_prompt_tokens")
+                record.cache_tokens = facts.final_metrics.get("total_cached_tokens")
+                record.output_tokens = facts.final_metrics.get("total_completion_tokens")
 
         changes = None
         if trial.workspace_path:

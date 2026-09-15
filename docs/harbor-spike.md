@@ -227,6 +227,50 @@ Measured, single trial on the cached image:
 Harbor names images by a content hash of the environment dir (`hb__<sha>`), so
 the build is paid once per distinct fixture+Dockerfile and reused across jobs.
 
+## Interactive skills: simulated user (verified)
+
+Some skills gather input (`AskUserQuestion`, or just asking). Findings from
+four spike trials with the `sow-draft` skill (four rounds of questions, then a
+Python generator producing a `.docx`), Harbor 0.23.0, claude-code-acp 0.16.2:
+
+1. **Headless, `AskUserQuestion` does not exist.** Claude Code in `-p` mode has
+   no such tool (the agent searched with `ToolSearch` and got nothing), asked
+   its questions as plain text, and the turn ended. Harbor records a clean,
+   completed trial with no output and no error.
+2. **Harbor's simulated user works.** `harbor run --bridge acp --user-agent
+   claude-code --user-model <m>` runs a second Claude Code in the same container
+   that plays the human over the ACP bridge (`acpx`). In this mode
+   `instruction.md` goes to the *user agent* as its private goal, so it carries
+   the persona: how to open and what to answer. Claude Code's ACP adapter
+   still has no `AskUserQuestion`; the agent asks in text and the user replies
+   in text, which the skill handled fine.
+3. **Harbor bug: `--skill` is ignored in ACP mode.** `acp_install` skips the
+   skill-registration step that `run()` performs, so the target never saw the
+   skill and improvised a plausible SOW from scratch. Workaround: install the
+   skill as a project skill at `/app/.claude/skills/<name>` in the image, which
+   Claude Code loads in every mode. Skill Lab does this in interactive mode and
+   drops `--skill` (so nothing double-registers if Harbor fixes it).
+4. **Subscription auth needs a wrapper.** The ACP target is spawned by
+   `acpx sessions ensure` from a Harbor setup exec that lacks the auth overlay,
+   and Claude Code strips `CLAUDE_CODE_OAUTH_TOKEN` from the user agent's Bash
+   subprocesses, so `acpx prompt` never carried it either ("Authentication
+   required"). The adapter *does* accept the token when present: the fix is to
+   set it container-wide (`[environment.env]` in task.toml, written at run time
+   and scrubbed afterwards) and install `/usr/local/sbin/claude-code-acp`, a
+   wrapper that re-exports it from `/proc/1/environ` before exec'ing the real
+   adapter. Verified with `ANTHROPIC_API_KEY` removed from the host: 1m28s, skill
+   invoked, `.docx` produced.
+5. **No ATIF for the target in ACP mode.** Harbor writes `agent/bridge-trajectory.json`
+   (acpx's JSON-RPC log) and the user agent's ATIF under `user-agent/`, but not
+   `agent/trajectory.json`. The native Claude Code session at
+   `agent/sessions/projects/-app/*.jsonl` has everything; Skill Lab converts it
+   (`harbor/claude_session.py`) into `runs/NNN/trajectory.json`, with user
+   messages interleaved so the evidence reads as a transcript. Tool names
+   arrive as `mcp__acp__Bash` etc. and are normalized.
+6. Token/cost for the target come from `result.json → agent_result` via
+   acpx's usage export; the user agent's cost is separate and not currently
+   summed in.
+
 ## Trial directory layout (observed)
 
 ```

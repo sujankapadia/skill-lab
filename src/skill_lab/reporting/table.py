@@ -17,9 +17,13 @@ def runs_table(records: list[RunRecord]) -> str:
         f"{'RUN':<4} {'OK':<3} {'TIME':>6} {'TOOLS':>5} {'CMDS':>4} {'FILES':>5} "
         f"{'+LINES':>6} {'-LINES':>6} {'IN_TOK':>8} {'OUT_TOK':>8} {'COST':>7}"
     )
+    interactive = any(r.interactive for r in records)
+    if interactive:
+        header += f" {'REPLIES':>7} {'WAITING':>7}"
     lines = [header]
     for r in records:
         stats = r.diff_stats
+        tail = f" {r.user_turns:>7} {'yes' if r.awaiting_input else 'no':>7}" if interactive else ""
         lines.append(
             f"{r.run_id:<4} {'y' if r.completed else 'N':<3} "
             f"{_fmt(r.duration_seconds, '.0f') + ('s' if r.duration_seconds is not None else ''):>6} "
@@ -28,7 +32,7 @@ def runs_table(records: list[RunRecord]) -> str:
             f"{_fmt(stats.insertions if stats else None):>6} "
             f"{_fmt(stats.deletions if stats else None):>6} "
             f"{_fmt(r.input_tokens):>8} {_fmt(r.output_tokens):>8} "
-            f"{('$' + format(r.cost_usd, '.2f')) if r.cost_usd is not None else '-':>7}"
+            f"{('$' + format(r.cost_usd, '.2f')) if r.cost_usd is not None else '-':>7}" + tail
         )
     return "\n".join(lines)
 
@@ -39,7 +43,8 @@ def experiment_header(manifest: Manifest, records: list[RunRecord]) -> str:
         f"Experiment: {manifest.id}",
         f"Skill:      {manifest.skill['name']}  ({manifest.skill['digest']})",
         f"Agent:      {manifest.agent['name']}  model={manifest.agent.get('model')}  auth={manifest.agent.get('auth')}",
-        f"Prompt:     {manifest.prompt['text'].strip().splitlines()[0][:100]}",
+        (f"Persona:    {(manifest.prompt.get('persona') or '').strip().splitlines()[0][:100]}  [interactive, user model {manifest.agent.get('user_model')}]"
+         if manifest.agent.get("interactive") else f"Prompt:     {manifest.prompt['text'].strip().splitlines()[0][:100]}"),
         f"Runs:       {completed}/{len(records)} completed",
     ])
 

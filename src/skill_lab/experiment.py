@@ -53,7 +53,7 @@ def normalize_experiment(paths: ExperimentPaths, job_dir: Path | None = None) ->
         run_dir = paths.run_dir(run_id)
         run_dir.mkdir(parents=True, exist_ok=True)
 
-        record, changes = parser.normalize(trial, manifest.id, run_id)
+        record, changes = parser.normalize(trial, manifest.id, run_id, run_dir)
         if changes is not None:
             patch_path = run_dir / "diff.patch"
             patch_path.write_text(changes.patch)

@@ -11,6 +11,8 @@ collect what the agent did, and analyze variation across runs. See
 - **Phase 2 — per-run summaries: done.** `skill-lab summarize`.
 - **Phase 3 — cross-run analysis: done.** `skill-lab analyze` → `analysis.json` + `report.md`; `run` does it automatically.
 - **Phase 4 — compare skill versions: done.** `skill-lab compare v1 v2`.
+- **Interactive skills: done.** `skill-lab run --interactive --persona-file …` runs each trial as a
+  conversation with a simulated user (see `examples/sow-draft/`).
 
 ## Prerequisites
 
@@ -93,6 +95,25 @@ runs/NNN/           # run.json (RunRecord), diff.patch, diff-stat.json, summary.
 analysis.json       # clusters, recurring patterns/problems, outliers, strong runs, suggested changes
 report.md           # the same, written for the skill author
 ```
+
+## Interactive skills
+
+Skills that ask the user questions can't run headless (Claude Code has no
+`AskUserQuestion` in `-p` mode; the run just ends). `--interactive` makes each
+trial a conversation: a second Claude Code instance plays the user, following a
+persona file that holds its goal and the answers to give, so every run gets the
+same answers. Still billed to the subscription.
+
+```bash
+uv run skill-lab run --interactive \
+  --skill ./path/to/sow-draft --repo ./examples/sow-draft/workspace \
+  --persona-file ./examples/sow-draft/persona-acme.md --apt python3-docx \
+  --attempts 20 --name sow-v1
+```
+
+`inspect` gains REPLIES (messages the simulated user sent) and WAITING (the run
+ended on an unanswered question); the evidence the summarizer sees is the full
+transcript. `--apt` adds packages the skill needs in the image.
 
 ## Tests
 

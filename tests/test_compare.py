@@ -66,3 +66,10 @@ def test_compare_counts_from_ids_and_renders(tmp_path: Path):
     p = tmp_path / "c.json"
     c.save(p)
     assert Comparison.load(p) == c
+
+
+def test_compatibility_warns_on_persona_and_mode():
+    a = manifest("a", "d1", prompt={"text": "P", "persona": "x", "persona_digest": "sha256:1"}, agent={"name": "claude-code", "model": "m", "interactive": True})
+    b = manifest("b", "d2", prompt={"text": "P", "persona": "y", "persona_digest": "sha256:2"}, agent={"name": "claude-code", "model": "m", "interactive": False})
+    w = compatibility_warnings(a, b)
+    assert any("persona" in x for x in w) and any("interactive" in x for x in w)

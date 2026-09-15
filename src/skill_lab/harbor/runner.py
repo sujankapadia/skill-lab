@@ -27,7 +27,7 @@ FROM ubuntu:24.04
 
 RUN apt-get update \\
     && apt-get install -y --no-install-recommends \\
-        git python3 python3-pytest ca-certificates curl bash procps \\
+        git python3 python3-pytest ca-certificates curl bash procps {apt_packages} \\
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install Claude Code so Harbor's per-trial agent setup is skipped: its
@@ -38,9 +38,9 @@ RUN curl -fsSL https://downloads.claude.ai/claude-code-releases/bootstrap.sh | b
     && ln -s /root/.local/bin/claude /usr/local/bin/claude \\
     && claude --version
 
-WORKDIR /app
+{interactive_layers}WORKDIR /app
 COPY repo/ /app/
-
+{project_skill_layer}
 # Every trial container starts from this image, so this commit is the shared
 # baseline that per-trial workspace diffs are computed against.
 RUN git init -q \\
@@ -48,6 +48,33 @@ RUN git init -q \\
     && git config user.name "Skill Lab" \\
     && git add -A \\
     && git commit -qm "baseline"
+"""
+
+# Interactive mode only. Harbor spawns the ACP target (claude-code-acp) from a
+# setup exec that lacks the auth overlay, and the simulated user's shell has the
+# OAuth token stripped by Claude Code; the container's PID 1 env (set from
+# task.toml [environment.env]) is the one place it survives. This wrapper sits
+# earlier on PATH than the npm-installed binary and re-injects it.
+ACP_WRAPPER = """\
+#!/bin/bash
+if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -r /proc/1/environ ]; then
+  export CLAUDE_CODE_OAUTH_TOKEN="$(tr '\\0' '\\n' < /proc/1/environ | sed -n 's/^CLAUDE_CODE_OAUTH_TOKEN=//p')"
+fi
+exec /usr/local/bin/claude-code-acp "$@"
+"""
+
+INTERACTIVE_LAYERS = """\
+# Interactive mode: re-inject the subscription token for the ACP target.
+COPY claude-code-acp-wrapper /usr/local/sbin/claude-code-acp
+RUN chmod +x /usr/local/sbin/claude-code-acp
+
+"""
+
+# Interactive mode: Harbor 0.23.0 does not register --skill for the ACP target
+# (acp_install skips the step run() performs), so install it as a project skill,
+# which Claude Code loads from the working directory in every mode.
+PROJECT_SKILL_LAYER = """\
+COPY skill/ /app/.claude/skills/{skill_name}/
 """
 
 TASK_TOML = """\
@@ -82,10 +109,25 @@ class HarborRunner:
         env_dir.mkdir(parents=True)
 
         shutil.copytree(self.config.repo, env_dir / "repo", ignore=REPO_IGNORE)
+        skill_name = self.config.skill.resolve().name
+        if self.config.interactive:
+            shutil.copytree(self.config.skill, env_dir / "skill", ignore=REPO_IGNORE)
+            (env_dir / "claude-code-acp-wrapper").write_text(ACP_WRAPPER)
         (env_dir / "Dockerfile").write_text(
-            DOCKERFILE.format(claude_code_version=self.config.claude_code_version)
+            DOCKERFILE.format(
+                claude_code_version=self.config.claude_code_version,
+                apt_packages=" ".join(self.config.apt_packages),
+                interactive_layers=INTERACTIVE_LAYERS if self.config.interactive else "",
+                project_skill_layer=PROJECT_SKILL_LAYER.format(skill_name=skill_name) if self.config.interactive else "",
+            )
         )
-        (task_dir / "instruction.md").write_text(self.config.prompt.rstrip() + "\n")
+        # In interactive mode instruction.md is the simulated user's private
+        # goal (Harbor hands it to the user agent, not the target), so it
+        # carries the persona: how to open, and what to answer.
+        instruction = self.config.persona if self.config.interactive else self.config.prompt
+        if not instruction:
+            raise ValueError("interactive mode requires a persona")
+        (task_dir / "instruction.md").write_text(instruction.rstrip() + "\n")
         (task_dir / "task.toml").write_text(
             TASK_TOML.format(
                 agent_timeout=self.config.agent_timeout_sec,
@@ -118,12 +160,30 @@ class HarborRunner:
             env.pop("CLAUDE_FORCE_OAUTH", None)
         return env
 
+    def _token_env_block(self) -> str:
+        return (
+            "\n[environment.env]\nCLAUDE_CODE_OAUTH_TOKEN = "
+            + json.dumps(os.environ["CLAUDE_CODE_OAUTH_TOKEN"]) + "\n"
+        )
+
+    def _inject_token(self) -> None:
+        """Interactive + subscription: put the token in the container env via
+        task.toml (see ACP_WRAPPER). Scrubbed again by _scrub_token()."""
+        toml = self.paths.task_dir / "task.toml"
+        toml.write_text(toml.read_text() + self._token_env_block())
+
+    def _scrub_token(self) -> None:
+        toml = self.paths.task_dir / "task.toml"
+        text = toml.read_text()
+        marker = "\n[environment.env]\n"
+        if marker in text:
+            toml.write_text(text[: text.index(marker)])
+
     def command(self, job_name: str) -> list[str]:
         cmd = [
             "harbor", "run",
             "--path", str(self.paths.task_dir),
             "--agent", self.config.agent,
-            "--skill", str(self.config.skill),
             "--n-attempts", str(self.config.attempts),
             "--n-concurrent", str(self.config.concurrency),
             "--disable-verification",
@@ -132,11 +192,25 @@ class HarborRunner:
         ]
         if self.config.model:
             cmd += ["--model", self.config.model]
+        if not self.config.interactive:
+            cmd += ["--skill", str(self.config.skill)]
+        else:
+            cmd += ["--bridge", "acp", "--user-agent", "claude-code"]
+            if self.config.user_model:
+                cmd += ["--user-model", self.config.user_model]
         return cmd
 
     def run(self, job_name: str) -> Path:
         """Run the job; returns the Harbor job directory."""
         cmd = self.command(job_name)
-        print("$", " ".join(cmd), f"  [auth: {self.config.auth}]", flush=True)
-        subprocess.run(cmd, check=True, env=self._env())
+        env = self._env()
+        inject = self.config.interactive and self.config.auth == "subscription"
+        if inject:
+            self._inject_token()
+        print("$", " ".join(cmd), f"  [auth: {self.config.auth}{', interactive' if self.config.interactive else ''}]", flush=True)
+        try:
+            subprocess.run(cmd, check=True, env=env)
+        finally:
+            if inject:
+                self._scrub_token()
         return self.paths.harbor_job_dir(job_name)

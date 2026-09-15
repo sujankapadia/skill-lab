@@ -73,9 +73,14 @@ def build_analysis_input(
     if missing:
         raise ValueError(f"runs without summaries: {missing}; run `skill-lab summarize` first")
 
+    started = sorted(r.started_at for r in records if r.started_at)
     parts = [
         "# Task prompt given to the agent in every run",
         prompt.strip(),
+        "",
+        "# Environment",
+        f"Runs executed between {started[0] if started else '?'} and {started[-1] if started else '?'} on a UTC clock; "
+        "that is the agent's 'today'. Do not judge dates against any other notion of the current date.",
         "",
         "# SKILL.md active in every run",
         skill_md.strip(),

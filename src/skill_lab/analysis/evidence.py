@@ -123,6 +123,7 @@ def build_evidence(
         "",
         "# Run status",
         f"completed: {record.completed}" + (f"\nerror: {record.error}" if record.error else ""),
+        f"started_at: {record.started_at} (the container's clock is UTC; 'today' for the agent is this date)",
         f"duration_seconds: {record.duration_seconds}",
         f"tool_calls: {len(record.tool_calls)}   bash_commands: {len(record.commands)}",
     ]

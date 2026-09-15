@@ -259,7 +259,14 @@ Python generator producing a `.docx`), Harbor 0.23.0, claude-code-acp 0.16.2:
    and scrubbed afterwards) and install `/usr/local/sbin/claude-code-acp`, a
    wrapper that re-exports it from `/proc/1/environ` before exec'ing the real
    adapter. Verified with `ANTHROPIC_API_KEY` removed from the host: 1m28s, skill
-   invoked, `.docx` produced.
+   invoked, `.docx` produced. The wrapper must be a **Node** script that finds
+   the adapter through `node_modules`: Harbor pins whatever `command -v
+   claude-code-acp` resolves to by rewriting `/usr/local/bin/claude-code-acp` to
+   `exec node <that path>`, so a bash wrapper breaks once it is first on PATH.
+7. **Per-trial ACP setup is slow unless baked in.** Harbor bootstraps Node 22 via
+   nvm and `npm install -g acpx@0.11.2 @zed-industries/claude-code-acp@0.16.2` on
+   every trial (minutes). With Node from nodesource and both packages
+   pre-installed at those versions in the image, agent setup drops to <1s.
 5. **No ATIF for the target in ACP mode.** Harbor writes `agent/bridge-trajectory.json`
    (acpx's JSON-RPC log) and the user agent's ATIF under `user-agent/`, but not
    `agent/trajectory.json`. The native Claude Code session at

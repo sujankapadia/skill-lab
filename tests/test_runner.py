@@ -32,7 +32,8 @@ def test_interactive_task(tmp_path: Path, workspace: Path):
     assert "COPY skill/ /app/.claude/skills/my-skill/" in df
     assert "COPY claude-code-acp-wrapper /usr/local/sbin/claude-code-acp" in df
     assert (task / "environment" / "skill" / "SKILL.md").exists()
-    assert "/proc/1/environ" in (task / "environment" / "claude-code-acp-wrapper").read_text()
+    wrapper = (task / "environment" / "claude-code-acp-wrapper").read_text()
+    assert "/proc/1/environ" in wrapper and wrapper.startswith("#!/usr/bin/env node")
     assert (task / "instruction.md").read_text().startswith("You want X.")
     cmd = r.command("e")
     assert "--skill" not in cmd

@@ -56,14 +56,60 @@ RUN git init -q \\
 # task.toml [environment.env]) is the one place it survives. This wrapper sits
 # earlier on PATH than the npm-installed binary and re-injects it.
 ACP_WRAPPER = """\
-#!/bin/bash
-if [ -z "$CLAUDE_CODE_OAUTH_TOKEN" ] && [ -r /proc/1/environ ]; then
-  export CLAUDE_CODE_OAUTH_TOKEN="$(tr '\\0' '\\n' < /proc/1/environ | sed -n 's/^CLAUDE_CODE_OAUTH_TOKEN=//p')"
-fi
-exec /usr/local/bin/claude-code-acp "$@"
+#!/usr/bin/env node
+// Skill Lab wrapper around @zed-industries/claude-code-acp.
+//
+// Harbor "pins" whatever `command -v claude-code-acp` finds by rewriting
+// /usr/local/bin/claude-code-acp to `exec node <that path>`, so this file must be
+// JavaScript, and it must locate the real adapter through node_modules rather
+// than PATH (which would resolve back to this wrapper or the pinned copy).
+const fs = require("fs");
+const path = require("path");
+const { spawn } = require("child_process");
+
+if (!process.env.CLAUDE_CODE_OAUTH_TOKEN) {
+  try {
+    const entry = fs.readFileSync("/proc/1/environ").toString("utf8").split("\\0")
+      .find((kv) => kv.startsWith("CLAUDE_CODE_OAUTH_TOKEN="));
+    if (entry) process.env.CLAUDE_CODE_OAUTH_TOKEN = entry.slice("CLAUDE_CODE_OAUTH_TOKEN=".length);
+  } catch (_) {}
+}
+
+const roots = ["/usr/lib/node_modules", "/usr/local/lib/node_modules"];
+for (const nvm of ["/root/.nvm/versions/node"]) {
+  try { for (const v of fs.readdirSync(nvm)) roots.push(path.join(nvm, v, "lib", "node_modules")); } catch (_) {}
+}
+let entry = null;
+for (const root of roots) {
+  const pkgDir = path.join(root, "@zed-industries", "claude-code-acp");
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(pkgDir, "package.json"), "utf8"));
+    const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin && pkg.bin["claude-code-acp"];
+    if (bin) { entry = path.join(pkgDir, bin); break; }
+  } catch (_) {}
+}
+if (!entry) { console.error("skill-lab acp wrapper: @zed-industries/claude-code-acp not found in " + roots.join(", ")); process.exit(127); }
+
+const child = spawn(process.execPath, [entry, ...process.argv.slice(2)], { stdio: "inherit", env: process.env });
+for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) process.on(sig, () => child.kill(sig));
+child.on("exit", (code, signal) => { if (signal) process.kill(process.pid, signal); else process.exit(code == null ? 1 : code); });
 """
 
+# Versions Harbor 0.23.0 pins (harbor/bridges/acp.py ACPX_NPM_VERSION,
+# harbor/agents/installed/claude_code.py CLAUDE_CODE_ACP_VERSION). Harbor still
+# runs `npm install -g <pkg>@<version>` per trial, but with Node >= 20 and the
+# same versions present that is seconds instead of a multi-minute nvm bootstrap.
+ACPX_VERSION = "0.11.2"
+CLAUDE_CODE_ACP_VERSION = "0.16.2"
+
 INTERACTIVE_LAYERS = """\
+# Interactive mode: Node 22 + the ACP bridge packages Harbor would otherwise
+# install on every trial.
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \\
+    && apt-get install -y --no-install-recommends nodejs \\
+    && rm -rf /var/lib/apt/lists/* \\
+    && npm install -g acpx@{acpx_version} @zed-industries/claude-code-acp@{acp_version}
+
 # Interactive mode: re-inject the subscription token for the ACP target.
 COPY claude-code-acp-wrapper /usr/local/sbin/claude-code-acp
 RUN chmod +x /usr/local/sbin/claude-code-acp
@@ -117,7 +163,10 @@ class HarborRunner:
             DOCKERFILE.format(
                 claude_code_version=self.config.claude_code_version,
                 apt_packages=" ".join(self.config.apt_packages),
-                interactive_layers=INTERACTIVE_LAYERS if self.config.interactive else "",
+                interactive_layers=(
+                    INTERACTIVE_LAYERS.format(acpx_version=ACPX_VERSION, acp_version=CLAUDE_CODE_ACP_VERSION)
+                    if self.config.interactive else ""
+                ),
                 project_skill_layer=PROJECT_SKILL_LAYER.format(skill_name=skill_name) if self.config.interactive else "",
             )
         )

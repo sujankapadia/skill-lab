@@ -1,18 +1,74 @@
 # Skill Lab
 
-Run an agent skill many times against the same task via [Harbor](https://github.com/laude-institute/harbor),
-collect what the agent did, and analyze variation across runs. See
-`skill-lab-project.md` for the full plan.
+**You can't tell how good an agent skill is by reading it, or by trying it once.**
+
+A `SKILL.md` is a prompt, and an agent follows it non-deterministically. The
+gaps that matter aren't syntax errors — they're the questions your instructions
+never answered, which the agent silently answers differently every time. You
+won't see them in a single run, because a single run looks fine.
+
+Skill Lab runs your skill 20–50 times against the same task in identical
+containers, then tells you what actually varied.
+
+## Why you should care
+
+A real example from this repo. A four-step documentation skill, run 20 times on
+one repository, looked perfectly reasonable — every run produced a decent
+document. But the repo also had a stale architecture blurb in its README, and
+the skill never said what to do about it:
+
+```
+Behavior                                    v1       v2
+Updated the contradicting README section   10/20   20/20
+Read CONTRIBUTING.md for doc conventions    0/20    17/20
+Document well over the length guidance     12/20     0/20
+Modified source code (it shouldn't)          0/20     0/20
+```
+
+Ten runs fixed the README, ten left the repository contradicting itself — a
+coin flip nobody would ever notice one run at a time. Skill Lab found it,
+traced it to the missing instruction, and suggested the sentence to add. `v2`
+is that sentence. The right column is the same skill after the edit.
+
+## Why you should use it
+
+- **It finds ambiguity, not bugs.** Where your skill is silent, the agent
+  improvises. Frequencies across many runs make that visible.
+- **Evidence, not vibes.** Every finding cites the runs it rests on; `inspect
+  --run 7` shows you that run's whole trajectory and diff.
+- **It closes the loop.** Edit the skill, re-run, and `compare` tells you
+  whether behavior actually changed — and what new behavior the edit introduced.
+- **It is not an eval harness.** No expected outputs, no pass/fail, no graders
+  to write. You supply a skill, a repo, and a prompt.
+- **It's cheap.** ~20 minutes and $0 for 20 runs on a Claude subscription.
+
+It works on skills that ask the user questions, too: a simulated user answers
+from a persona file, so all 20 runs get identical answers and the only thing
+varying is the skill.
+
+## How it works
+
+Your skill + a repo fixture + a prompt → [Harbor](https://github.com/laude-institute/harbor)
+runs N isolated trials → each run's trajectory and workspace diff are normalized
+→ an LLM summarizes each run → a second pass finds clusters, recurring problems,
+outliers, strong runs, and suggested `SKILL.md` edits → `report.md`.
+
+Harbor is the execution substrate (containers, agent installation, trajectories);
+Skill Lab is the behavior-analysis layer on top. `skill-lab-project.md` is the
+original design doc.
 
 ## Status
 
-- **Phase 0 — Harbor spike: done.** Findings in `docs/harbor-spike.md`.
-- **Phase 1 — normalize runs: done.** `skill-lab run` / `inspect` / `normalize`.
-- **Phase 2 — per-run summaries: done.** `skill-lab summarize`.
-- **Phase 3 — cross-run analysis: done.** `skill-lab analyze` → `analysis.json` + `report.md`; `run` does it automatically.
-- **Phase 4 — compare skill versions: done.** `skill-lab compare v1 v2`.
-- **Interactive skills: done.** `skill-lab run --interactive --persona-file …` runs each trial as a
-  conversation with a simulated user (see `examples/sow-draft/`).
+Complete and used end to end on real skills. Commands: `run`, `inspect`,
+`normalize`, `summarize`, `analyze`, `compare`.
+
+- Harbor integration findings (verified, not documentation-derived): `docs/harbor-spike.md`
+- Worked example with real reports: `examples/architecture-docs/`
+- Interactive-skill example: `examples/sow-draft/`
+
+Not built yet: hierarchical summarization for experiments beyond ~50 runs,
+agents other than Claude Code, deterministic checks (tests pass, protected files
+touched).
 
 ## Prerequisites
 

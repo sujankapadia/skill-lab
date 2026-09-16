@@ -176,6 +176,13 @@ def cmd_compare(args: argparse.Namespace) -> int:
 def cmd_usage(args: argparse.Namespace) -> int:
     from skill_lab.models.analysis import Analysis
 
+    if args.local is not None:
+        from skill_lab.local_usage import collect, render
+
+        print(render(collect(args.local)))
+        return 0
+    if not args.experiment:
+        sys.exit("give an experiment, or --local [HOURS] for all Claude Code usage on this machine")
     paths = _resolve_experiment(args.experiment)
     records = load_runs(paths)
     analysis = Analysis.load(paths.analysis) if paths.analysis.exists() else None
@@ -249,8 +256,11 @@ def build_parser() -> argparse.ArgumentParser:
     compare.add_argument("--output", type=Path, help="Output directory (default: .skill-lab/comparisons/<a>--<b>)")
     compare.set_defaults(func=cmd_compare)
 
-    usage = sub.add_parser("usage", help="Token and cost usage for an experiment: rollouts vs. analysis calls")
-    usage.add_argument("experiment", help="Experiment directory or id")
+    usage = sub.add_parser("usage", help="Token usage: for one experiment, or --local for this machine")
+    usage.add_argument("experiment", nargs="?", help="Experiment directory or id")
+    usage.add_argument("--local", type=float, nargs="?", const=24, metavar="HOURS",
+                       help="Instead of one experiment, total all Claude Code sessions on this machine "
+                            "over the last HOURS (default 24), broken down by model and project")
     usage.set_defaults(func=cmd_usage)
 
     normalize = sub.add_parser("normalize", help="(Re)build runs/ from the experiment's Harbor job")

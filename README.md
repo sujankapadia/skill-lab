@@ -380,8 +380,29 @@ Costs are estimates (LiteLLM pricing for rollouts, the CLI's own figure for
 analysis calls) — on a subscription nothing is billed per token. Usage is
 recorded on each `summary.json` and on `analysis.json`; `analyze` prints the
 breakdown when it finishes. On short experiments the analysis side can cost
-more than the runs themselves, so `--model haiku` for summarization is the
-first lever if you are near a limit.
+more than the runs themselves.
+
+To see how that compares with everything else you run:
+
+```bash
+uv run skill-lab usage --local 24
+```
+```
+model                           fresh in  cache write    cache read     output
+claude-opus-5                         52      523,331    13,709,935     28,085
+
+weighted share by project:
+   60.6%    49,672,222  -Users-you-projects-something-else
+   19.7%    16,157,362  -Users-you-projects-skill-lab
+    8.6%     7,029,706  -                                    ← the claude -p analysis calls
+```
+
+This reads `~/.claude/projects/**/*.jsonl`, the same local session history
+Claude Code's own `/usage` uses, so it sees neither other devices nor
+claude.ai — **nor Skill Lab's own rollouts**, which run in containers and
+write their session files under the experiment directory. Use it to compare
+projects, not as a plan total. It is often a surprise: when we first ran it,
+an unrelated project accounted for three times more usage than Skill Lab.
 
 ## Billing
 

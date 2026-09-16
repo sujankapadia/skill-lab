@@ -206,7 +206,7 @@ uv run skill-lab run \
   --skill ./examples/architecture-docs/skills/v1/architecture-documentation \
   --repo  ./examples/architecture-docs/repo \
   --prompt-file ./examples/architecture-docs/prompt.md \
-  --attempts 20 --concurrency 4 --name arch-v1
+  --attempts 10 --concurrency 4 --name arch-v1
 
 # Table of runs (time, tool calls, files changed, tokens, cost).
 uv run skill-lab inspect arch-v1
@@ -232,7 +232,7 @@ uv run skill-lab summarize arch-v1 --model haiku
 # Edit the skill, run it again under a new name, then compare observed behavior.
 uv run skill-lab run --skill ./examples/architecture-docs/skills/v2/architecture-documentation \
   --repo ./examples/architecture-docs/repo --prompt-file ./examples/architecture-docs/prompt.md \
-  --attempts 20 --name arch-v2
+  --attempts 10 --name arch-v2
 uv run skill-lab compare arch-v1 arch-v2      # -> .skill-lab/comparisons/arch-v1--arch-v2/report.md
 ```
 
@@ -289,7 +289,7 @@ same answers. Still billed to the subscription.
 uv run skill-lab run --interactive \
   --skill ./path/to/sow-draft --repo ./examples/sow-draft/workspace \
   --persona-file ./examples/sow-draft/persona-acme.md --apt python3-docx \
-  --attempts 20 --name sow-v1
+  --attempts 10 --name sow-v1
 ```
 
 `inspect` gains REPLIES (messages the simulated user sent) and WAITING (the run
@@ -331,11 +331,41 @@ separately from the target's, and `skill-lab usage` does not yet include it.
 uv run pytest
 ```
 
+## How many runs?
+
+The default is **10**. We ran both worked examples at 20 and then checked what
+the first 10 would have shown:
+
+| finding | first 10 | all 20 |
+|---|---|---|
+| the 10/20 README split (the headline finding) | 4/10 | 10/20 |
+| the regression the v2 edit introduced | 2/10 | 2/20 |
+| a generator crash in the SOW skill | 3/10 | 6/20 |
+| document length spread | 66–115 | 66–116 |
+
+Every finding was already visible at 10; the second ten bought precision on the
+ratio, not new information — and halving the runs halves the token cost, since
+both the trials and the per-run summaries scale with it.
+
+Raise it to 20 when the *number* matters rather than the finding: a v1 vs v2
+comparison you will act on, or when you suspect something rarer than the runs
+have shown. For a behavior that truly occurs 10% of the time, 10 runs show you
+nothing about a third of the time; 20 runs, about an eighth.
+
+Resist reaching for a cheaper analysis model to save instead. Summarizing with
+Haiku is ~28% cheaper but measurably worse at the thing this tool exists for —
+in a side-by-side on 20 runs it missed one of the two runs that ignored an
+explicit skill instruction, and the cross-run analyzer then called that run
+*strong*. Fewer runs costs you precision; a weaker summarizer costs you
+findings. If you want a cheap first look, `analyze --model haiku` and then
+re-run `summarize --force` with the default before acting on it — the stored
+trajectories make that re-runnable without re-running the trials.
+
 ## Cost and usage
 
-Rollouts are not the whole bill. A 20-run experiment also makes ~21 LLM calls
-for analysis (one summary per run, plus the cross-run pass), and on a
-subscription those draw from the same allowance:
+Rollouts are not the whole bill. An experiment also makes one summary call per
+run plus one cross-run call, and on a subscription those draw from the same
+allowance. Measured on a 20-run experiment (halve it for the default 10):
 
 ```bash
 uv run skill-lab usage arch-v1

@@ -199,7 +199,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--repo", type=Path, required=True, help="Local repository fixture")
     run.add_argument("--prompt", help="Task prompt text")
     run.add_argument("--prompt-file", type=Path, help="File containing the task prompt")
-    run.add_argument("--attempts", type=int, default=20)
+    run.add_argument("--attempts", type=int, default=10,
+                     help="Trials to run (default: 10). Raise to 20 when a frequency needs to be "
+                          "trustworthy — e.g. a v1/v2 comparison, or hunting a behavior rarer than ~1 in 10")
     run.add_argument("--agent", default="claude-code")
     run.add_argument("--model", default="anthropic/claude-sonnet-5")
     run.add_argument("--concurrency", type=int, default=4)
